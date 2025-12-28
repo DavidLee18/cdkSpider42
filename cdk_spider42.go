@@ -1,8 +1,11 @@
 package main
 
 import (
+	"os"
+
 	"github.com/aws/aws-cdk-go/awscdk/v2"
-	// "github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -21,9 +24,33 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	// The code that defines your stack goes here
 
 	// example resource
-	// queue := awssqs.NewQueue(stack, jsii.String("CdkSpider42Queue"), &awssqs.QueueProps{
-	// 	VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(300)),
-	// })
+	_ = awssqs.NewQueue(stack, jsii.String("CdkSpider42Queue"), &awssqs.QueueProps{
+		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(300)),
+	})
+
+	// Define the Lambda function resource
+	myFunction := awslambda.NewFunction(stack, jsii.String("HelloCdkFunction"), &awslambda.FunctionProps{
+		Runtime: awslambda.Runtime_NODEJS_20_X(), // Provide any supported Node.js runtime
+		Handler: jsii.String("index.handler"),
+		Code: awslambda.Code_FromInline(jsii.String(`
+      exports.handler = async function(event) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify('Hello Cdk!'),
+        };
+      };
+    `)),
+	})
+
+	// Define the Lambda function URL resource
+	myFunctionUrl := myFunction.AddFunctionUrl(&awslambda.FunctionUrlOptions{
+		AuthType: awslambda.FunctionUrlAuthType_NONE,
+	})
+
+	// Define a CloudFormation output for your URL
+	awscdk.NewCfnOutput(stack, jsii.String("myFunctionUrlOutput"), &awscdk.CfnOutputProps{
+		Value: myFunctionUrl.Url(),
+	})
 
 	return stack
 }
@@ -49,7 +76,7 @@ func env() *awscdk.Environment {
 	// Account/Region-dependent features and context lookups will not work, but a
 	// single synthesized template can be deployed anywhere.
 	//---------------------------------------------------------------------------
-	return nil
+	//return nil
 
 	// Uncomment if you know exactly what account and region you want to deploy
 	// the stack to. This is the recommendation for production stacks.
@@ -63,8 +90,8 @@ func env() *awscdk.Environment {
 	// implied by the current CLI configuration. This is recommended for dev
 	// stacks.
 	//---------------------------------------------------------------------------
-	// return &awscdk.Environment{
-	//  Account: jsii.String(os.Getenv("CDK_DEFAULT_ACCOUNT")),
-	//  Region:  jsii.String(os.Getenv("CDK_DEFAULT_REGION")),
-	// }
+	return &awscdk.Environment{
+		Account: jsii.String(os.Getenv("CDK_DEFAULT_ACCOUNT")),
+		Region:  jsii.String(os.Getenv("CDK_DEFAULT_REGION")),
+	}
 }

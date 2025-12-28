@@ -16,4 +16,7 @@
 
 # CDK asset staging directory
 .cdk.staging
-cdk.out
+cdk.out/
+
+cdk_spider42
+.idea/
