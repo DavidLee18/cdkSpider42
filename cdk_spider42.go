@@ -4,8 +4,11 @@ import (
 	"os"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
+	"github.com/aws/aws-cdk-go/awscdklambdagoalpha/v2"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
@@ -23,33 +26,38 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// The code that defines your stack goes here
 
-	// example resource
-	_ = awssqs.NewQueue(stack, jsii.String("CdkSpider42Queue"), &awssqs.QueueProps{
-		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(300)),
+	// create AmazonDynamoDBFullAccess role
+	dynamoDBRole := awsiam.NewRole(stack, aws.String("myDynamoDBFullAccessRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(aws.String("lambda.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
+		ManagedPolicies: &[]awsiam.IManagedPolicy{
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonDynamoDBFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")),
+		},
 	})
 
-	// Define the Lambda function resource
-	myFunction := awslambda.NewFunction(stack, jsii.String("HelloCdkFunction"), &awslambda.FunctionProps{
-		Runtime: awslambda.Runtime_NODEJS_20_X(), // Provide any supported Node.js runtime
-		Handler: jsii.String("index.handler"),
-		Code: awslambda.Code_FromInline(jsii.String(`
-      exports.handler = async function(event) {
-        return {
-          statusCode: 200,
-          body: JSON.stringify('Hello Cdk!'),
-        };
-      };
-    `)),
+	// create lambda function with previously created AmazonDynamoDBFullAccess role
+	lambdaFunction := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("myGoHandler"), &awscdklambdagoalpha.GoFunctionProps{
+		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
+		Entry:   jsii.String("./lambda-handler"),
+		Bundling: &awscdklambdagoalpha.BundlingOptions{
+			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
+		},
+		Role: dynamoDBRole,
 	})
 
-	// Define the Lambda function URL resource
-	myFunctionUrl := myFunction.AddFunctionUrl(&awslambda.FunctionUrlOptions{
-		AuthType: awslambda.FunctionUrlAuthType_NONE,
+	// create DynamoDB table
+	awsdynamodb.NewTable(stack, jsii.String("myDynamoDB"), &awsdynamodb.TableProps{
+		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		TableName:   jsii.String("MyDynamoDB"),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: aws.String("ID"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
 	})
 
-	// Define a CloudFormation output for your URL
-	awscdk.NewCfnOutput(stack, jsii.String("myFunctionUrlOutput"), &awscdk.CfnOutputProps{
-		Value: myFunctionUrl.Url(),
+	// log lambda function ARN
+	awscdk.NewCfnOutput(stack, jsii.String("lambdaFunctionArn"), &awscdk.CfnOutputProps{
+		Value:       lambdaFunction.FunctionArn(),
+		Description: jsii.String("Lambda function ARN"),
 	})
 
 	return stack
@@ -69,7 +77,7 @@ func main() {
 	app.Synth(nil)
 }
 
-// env determines the AWS environment (account+region) in which our stack is to
+// `env` determines the AWS environment (account+region) in which our stack is to
 // be deployed. For more information see: https://docs.aws.amazon.com/cdk/latest/guide/environments.html
 func env() *awscdk.Environment {
 	// If unspecified, this stack will be "environment-agnostic".

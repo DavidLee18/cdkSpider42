@@ -20,3 +20,5 @@ cdk.out/
 
 cdk_spider42
 .idea/
+
+.DS_Store
