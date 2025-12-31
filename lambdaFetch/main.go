@@ -32,7 +32,6 @@ func init() {
 }
 
 func handleRequest(ctx context.Context, event MyEvent) {
-
 	av, err := attributevalue.MarshalMap(event)
 	if err != nil {
 		log.Fatalf("Got error marshalling new movie item: %s", err)
@@ -40,17 +39,14 @@ func handleRequest(ctx context.Context, event MyEvent) {
 
 	tableName := "MyDynamoDB"
 
-	input := &dynamodb.PutItemInput{
+	_, err = dbClient.PutItem(ctx, &dynamodb.PutItemInput{
 		Item:      av,
 		TableName: &tableName,
-	}
-
-	_, err = dbClient.PutItem(ctx, input)
+	})
 	if err != nil {
 		log.Fatalf("Got error calling PutItem: %s", err)
-	} else {
-		log.Println("Successfully added '" + event.Message + "' to table " + tableName)
 	}
+	log.Printf("Successfully added '%s' to table %s\n", event.Message, tableName)
 }
 
 func main() {

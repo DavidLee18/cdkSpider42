@@ -18,7 +18,9 @@
 .cdk.staging
 cdk.out/
 
+# executable
 cdk_spider42
+
 .idea/
 
 .DS_Store
