@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsevents"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awseventstargets"
@@ -11,6 +15,8 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambdaeventsources"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/aws-cdk-go/awscdklambdagoalpha/v2"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,6 +42,12 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		AssumedBy: awsiam.NewServicePrincipal(aws.String("lambda.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
 			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonDynamoDBFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonEventBridgeFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonS3FullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonS3FullAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonSQSFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonSQSFullAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AWSLambda_ReadOnlyAccess"), aws.String("arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AWSSecretsManagerClientReadOnlyAccess"), aws.String("arn:aws:iam::aws:policy/AWSSecretsManagerClientReadOnlyAccess")),
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonSNSFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonSNSFullAccess")),
 		},
 	})
 
@@ -78,12 +90,17 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	})
 
 	// create EventBridge
-	eventBus := awsevents.NewEventBus(stack, jsii.String("Spider42EventBus"), &awsevents.EventBusProps{
+	_ = awsevents.NewEventBus(stack, jsii.String("Spider42EventBus"), &awsevents.EventBusProps{
 		EventBusName: jsii.String("Spider42EventBus"),
 	})
+	when := time.Now().UTC()
+	if when.Hour() > 10 || when.Minute() >= 30 {
+		when = time.Date(when.Year(), when.Month(), when.Day()+1, 10, 30, 0, 0, time.UTC)
+	}
 	rule := awsevents.NewRule(stack, jsii.String("Spider42EventBusRule"), &awsevents.RuleProps{
-		EventBus: eventBus,
-		Schedule: awsevents.Schedule_Expression(jsii.String("cron(30 10 * 12 ? 2025)")),
+		// EventBus: eventBus,
+		RuleName: jsii.String("Spider42EventBusRule"),
+		Schedule: awsevents.Schedule_Expression(jsii.String(fmt.Sprintf("cron(%02d %02d %02d %02d ? %d)", when.Minute(), when.Hour(), when.Day(), when.Month(), when.Year()))),
 	})
 	rule.AddTarget(awseventstargets.NewSqsQueue(storeQueue, &awseventstargets.SqsQueueProps{}))
 	rule.AddTarget(awseventstargets.NewSqsQueue(updateQueue, &awseventstargets.SqsQueueProps{}))
@@ -138,7 +155,32 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	spider42Bucket := awss3.NewBucket(stack, jsii.String("Spider42Bucket"), &awss3.BucketProps{
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
 		EnforceSSL:        jsii.Bool(true),
+		PublicReadAccess:  jsii.Bool(false),
 		Versioned:         jsii.Bool(true),
+	})
+
+	spider42JobDone := awssns.NewTopic(stack, jsii.String("Spider42JobDone"), &awssns.TopicProps{
+		DisplayName: jsii.String("Spider42JobDone"),
+	})
+
+	awssns.NewSubscription(stack, jsii.String("Spider42JobDoneSubscription"), &awssns.SubscriptionProps{
+		Topic:    spider42JobDone,
+		Endpoint: jsii.String(os.Getenv("SPIDER42_JOB_DONE_EMAIL")),
+		Protocol: awssns.SubscriptionProtocol_EMAIL,
+	})
+
+	// Creates Origin Access Identity (OAI) to only allow CloudFront to get content
+	cloudfrontDefaultBehavior := &awscloudfront.BehaviorOptions{
+		// Sets the S3 Bucket as the origin and tells CloudFront to use the created OAI to access it
+		Origin: awscloudfrontorigins.S3BucketOrigin_WithOriginAccessControl(spider42Bucket, &awscloudfrontorigins.S3BucketOriginWithOACProps{
+			OriginAccessControl: awscloudfront.NewS3OriginAccessControl(stack, jsii.String("Spider42OAC"), &awscloudfront.S3OriginAccessControlProps{
+				Signing: awscloudfront.Signing_SIGV4_NO_OVERRIDE(),
+			}),
+		}),
+		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+	}
+	dist := awscloudfront.NewDistribution(stack, jsii.String("Spider42CloudFront"), &awscloudfront.DistributionProps{
+		DefaultBehavior: cloudfrontDefaultBehavior,
 	})
 
 	// create lambda function
@@ -151,23 +193,27 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			},
 			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
 		},
-		Entry: jsii.String("./lambdaFetch"),
+		Entry: jsii.String("./lambdaFetchStores"),
 		Environment: &map[string]*string{
+			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_FETCH_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
 			"QUEUE_URL":        storeQueue.QueueUrl(),
 			"TABLE_NAME":       storesTable.TableName(),
+			"SNS_ARN":          spider42JobDone.TopicArn(),
+			"DIST_URL":         dist.DomainName(),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(storeQueue, &awslambdaeventsources.SqsEventSourceProps{
 				BatchSize:      jsii.Number(1),
 				Enabled:        jsii.Bool(true),
-				MaxConcurrency: jsii.Number(1),
+				MaxConcurrency: jsii.Number(2),
 			}),
 		},
-		Role:    lambdaRole,
-		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
+		RecursiveLoop: awslambda.RecursiveLoop_ALLOW,
+		Role:          lambdaRole,
+		Runtime:       awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:       awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 	lambdaFetchUpdates := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchUpdates"), &awscdklambdagoalpha.GoFunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -178,23 +224,33 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			},
 			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
 		},
-		Entry: jsii.String("./lambdaFetch"),
+		Entry: jsii.String("./lambdaFetchUpdates"),
 		Environment: &map[string]*string{
+			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
 			"QUEUE_URL":        storeQueue.QueueUrl(),
 			"TABLE_NAME":       storesUpdatesTable.TableName(),
+			"SNS_ARN":          spider42JobDone.TopicArn(),
+			"DIST_URL":         dist.DomainName(),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(storeQueue, &awslambdaeventsources.SqsEventSourceProps{
 				BatchSize:      jsii.Number(1),
 				Enabled:        jsii.Bool(true),
-				MaxConcurrency: jsii.Number(1),
+				MaxConcurrency: jsii.Number(2),
 			}),
 		},
-		Role:    lambdaRole,
-		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
+		RecursiveLoop: awslambda.RecursiveLoop_ALLOW,
+		Role:          lambdaRole,
+		Runtime:       awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:       awscdk.Duration_Seconds(jsii.Number(90)),
+	})
+
+	awssecretsmanager.NewSecret(stack, jsii.String("Spider42SecretsManager"), &awssecretsmanager.SecretProps{
+		Description:       jsii.String("A secret for Spider42"),
+		SecretName:        jsii.String("Spider42Secret"),
+		SecretStringValue: awscdk.SecretValue_UnsafePlainText(jsii.String(os.Getenv("SPIDER42_SECRET"))),
 	})
 
 	// log queue URLs
@@ -215,6 +271,11 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	awscdk.NewCfnOutput(stack, jsii.String("lambdaFetchUpdatesArn"), &awscdk.CfnOutputProps{
 		Description: jsii.String("Lambda Fetch Updates function ARN"),
 		Value:       lambdaFetchUpdates.FunctionArn(),
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("spider42CloudFrontURL"), &awscdk.CfnOutputProps{
+		Description: jsii.String("Spider42 CloudFront URL"),
+		Value:       dist.DistributionDomainName(),
 	})
 
 	return stack
