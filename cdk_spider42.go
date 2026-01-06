@@ -51,17 +51,14 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// The code that defines your stack goes here
 
+	logPolicy := awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("CloudWatchLogsFullAccess"), aws.String("arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"))
+
 	// create role
 	lambdaRole := awsiam.NewRole(stack, aws.String("spider42LambdaRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(aws.String("lambda.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonDynamoDBFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")),
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonEventBridgeFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess")),
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonS3FullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonS3FullAccess")),
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonSQSFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonSQSFullAccess")),
+			logPolicy,
 			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AWSLambda_ReadOnlyAccess"), aws.String("arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess")),
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AWSSecretsManagerClientReadOnlyAccess"), aws.String("arn:aws:iam::aws:policy/AWSSecretsManagerClientReadOnlyAccess")),
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AmazonSNSFullAccess"), aws.String("arn:aws:iam::aws:policy/AmazonSNSFullAccess")),
 		},
 	})
 
@@ -103,12 +100,17 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		VisibilityTimeout:      awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 
+	storeQueue.GrantConsumeMessages(lambdaRole)
+	storeQueue.GrantSendMessages(lambdaRole)
+	updateQueue.GrantConsumeMessages(lambdaRole)
+	updateQueue.GrantSendMessages(lambdaRole)
+
 	// create EventBridge scheduler
 	when := time.Now().UTC()
-	if when.Hour() > 10 || when.Minute() >= 30 {
-		when = time.Date(when.Year(), when.Month(), when.Day()+1, 5, 30, 0, 0, time.UTC)
+	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) {
+		when = time.Date(when.Year(), when.Month(), when.Day()+1, 7, 55, 0, 0, time.UTC)
 	} else {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 5, 30, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day(), 7, 55, 0, 0, time.UTC)
 	}
 	scheduleGroup := awsscheduler.NewScheduleGroup(stack, jsii.String("Spider42ScheduleGroup"), &awsscheduler.ScheduleGroupProps{
 		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
@@ -199,6 +201,10 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		TableName: jsii.String("Spider42Limits"),
 	})
 
+	storesTable.GrantReadWriteData(lambdaRole)
+	storesUpdatesTable.GrantReadWriteData(lambdaRole)
+	limitTable.GrantReadWriteData(lambdaRole)
+
 	spider42Bucket := awss3.NewBucket(stack, jsii.String("Spider42Bucket"), &awss3.BucketProps{
 		AutoDeleteObjects: jsii.Bool(true),
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
@@ -211,7 +217,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	snsLogRole := awsiam.NewRole(stack, aws.String("spider42SnsLogRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(aws.String("sns.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("CloudWatchLogsFullAccess"), aws.String("arn:aws:iam::aws:policy/CloudWatchLogsFullAccess")),
+			logPolicy,
 		},
 	})
 
@@ -228,7 +234,8 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		TopicName: jsii.String("Spider42JobDone"),
 	})
 
-	spider42JobDone.GrantPublish(snsLogRole)
+	spider42JobDone.GrantPublish(lambdaRole)
+	spider42JobDone.GrantSubscribe(snsLogRole)
 
 	awssns.NewSubscription(stack, jsii.String("Spider42JobDoneSubscription"), &awssns.SubscriptionProps{
 		Topic:    spider42JobDone,
@@ -250,7 +257,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		DefaultBehavior: cloudfrontDefaultBehavior,
 	})
 
-	spider42Bucket.GrantReadWrite(lambdaRole, "*")
+	spider42Bucket.GrantPut(lambdaRole, "*")
 
 	// create lambda functions
 	lambdaFetchStores := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchStores"), &awscdklambdagoalpha.GoFunctionProps{
@@ -298,13 +305,13 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
-			"QUEUE_URL":        storeQueue.QueueUrl(),
+			"QUEUE_URL":        updateQueue.QueueUrl(),
 			"TABLE_NAME":       storesUpdatesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
 			"DIST_URL":         dist.DomainName(),
 		},
 		Events: &[]awslambda.IEventSource{
-			awslambdaeventsources.NewSqsEventSource(storeQueue, &awslambdaeventsources.SqsEventSourceProps{
+			awslambdaeventsources.NewSqsEventSource(updateQueue, &awslambdaeventsources.SqsEventSourceProps{
 				BatchSize:      jsii.Number(1),
 				Enabled:        jsii.Bool(true),
 				MaxConcurrency: jsii.Number(2),
@@ -317,12 +324,14 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	})
 
 	// secret
-	awssecretsmanager.NewSecret(stack, jsii.String("Spider42SecretsManager"), &awssecretsmanager.SecretProps{
+	spider42Secret := awssecretsmanager.NewSecret(stack, jsii.String("Spider42SecretsManager"), &awssecretsmanager.SecretProps{
 		Description:       jsii.String("A secret for Spider42"),
 		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
 		SecretName:        jsii.String("Spider42Secret"),
 		SecretStringValue: awscdk.SecretValue_UnsafePlainText(jsii.String(os.Getenv("SPIDER42_SECRET"))),
 	})
+
+	spider42Secret.GrantRead(lambdaRole, nil)
 
 	// log schedule output
 	awscdk.NewCfnOutput(stack, jsii.String("spider42StoreSchedule"), &awscdk.CfnOutputProps{
