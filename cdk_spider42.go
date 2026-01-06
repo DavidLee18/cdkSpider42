@@ -9,12 +9,12 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awsevents"
-	"github.com/aws/aws-cdk-go/awscdk/v2/awseventstargets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambda"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awslambdaeventsources"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsscheduler"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsschedulertargets"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
@@ -23,6 +23,20 @@ import (
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
 )
+
+type PayloadType uint8
+
+const (
+	PayloadStart PayloadType = iota
+	PayloadBetween
+	PayloadEnd
+)
+
+type Payload struct {
+	Type  PayloadType `json:"TYPE"`
+	From  int64       `json:"FROM"`
+	Until int64       `json:"UNTIL"`
+}
 
 type CdkSpider42StackProps struct {
 	awscdk.StackProps
@@ -37,7 +51,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// The code that defines your stack goes here
 
-	// create AmazonDynamoDBFullAccess role
+	// create role
 	lambdaRole := awsiam.NewRole(stack, aws.String("spider42LambdaRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(aws.String("lambda.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
@@ -89,21 +103,51 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		VisibilityTimeout:      awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 
-	// create EventBridge
-	_ = awsevents.NewEventBus(stack, jsii.String("Spider42EventBus"), &awsevents.EventBusProps{
-		EventBusName: jsii.String("Spider42EventBus"),
-	})
+	// create EventBridge scheduler
 	when := time.Now().UTC()
 	if when.Hour() > 10 || when.Minute() >= 30 {
-		when = time.Date(when.Year(), when.Month(), when.Day()+1, 10, 30, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day()+1, 5, 30, 0, 0, time.UTC)
+	} else {
+		when = time.Date(when.Year(), when.Month(), when.Day(), 5, 30, 0, 0, time.UTC)
 	}
-	rule := awsevents.NewRule(stack, jsii.String("Spider42EventBusRule"), &awsevents.RuleProps{
-		// EventBus: eventBus,
-		RuleName: jsii.String("Spider42EventBusRule"),
-		Schedule: awsevents.Schedule_Expression(jsii.String(fmt.Sprintf("cron(%02d %02d %02d %02d ? %d)", when.Minute(), when.Hour(), when.Day(), when.Month(), when.Year()))),
+	scheduleGroup := awsscheduler.NewScheduleGroup(stack, jsii.String("Spider42ScheduleGroup"), &awsscheduler.ScheduleGroupProps{
+		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
+		ScheduleGroupName: jsii.String("Spider42ScheduleGroup"),
 	})
-	rule.AddTarget(awseventstargets.NewSqsQueue(storeQueue, &awseventstargets.SqsQueueProps{}))
-	rule.AddTarget(awseventstargets.NewSqsQueue(updateQueue, &awseventstargets.SqsQueueProps{}))
+	storeSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42StoreSchedule"), &awsscheduler.ScheduleProps{
+		ScheduleGroup: scheduleGroup,
+		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
+			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
+			Hour:   jsii.String(fmt.Sprintf("%02d", when.Hour())),
+			Day:    jsii.String(fmt.Sprintf("%02d", when.Day())),
+			Month:  jsii.String(fmt.Sprintf("%02d", when.Month())),
+			Year:   jsii.String(fmt.Sprintf("%04d", when.Year())),
+		}),
+		Target: awsschedulertargets.NewSqsSendMessage(storeQueue, &awsschedulertargets.SqsSendMessageProps{
+			DeadLetterQueue: storeDeadQueue,
+			Input: awsscheduler.ScheduleTargetInput_FromObject(Payload{
+				Type:  PayloadStart,
+				From:  0,
+				Until: 999,
+			}),
+		})})
+	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
+		ScheduleGroup: scheduleGroup,
+		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
+			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
+			Hour:   jsii.String(fmt.Sprintf("%02d", when.Hour())),
+			Day:    jsii.String(fmt.Sprintf("%02d", when.Day())),
+			Month:  jsii.String(fmt.Sprintf("%02d", when.Month())),
+			Year:   jsii.String(fmt.Sprintf("%04d", when.Year())),
+		}),
+		Target: awsschedulertargets.NewSqsSendMessage(updateQueue, &awsschedulertargets.SqsSendMessageProps{
+			DeadLetterQueue: updateDeadQueue,
+			Input: awsscheduler.ScheduleTargetInput_FromObject(Payload{
+				Type:  PayloadStart,
+				From:  0,
+				Until: 999,
+			}),
+		})})
 
 	// create DynamoDB table
 	storesTable := awsdynamodb.NewTable(stack, jsii.String("Spider42Stores"), &awsdynamodb.TableProps{
@@ -115,6 +159,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
 			PointInTimeRecoveryEnabled: aws.Bool(true),
 		},
+		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		SortKey: &awsdynamodb.Attribute{
 			Name: aws.String("ID"),
 			Type: awsdynamodb.AttributeType_STRING,
@@ -130,6 +175,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
 			PointInTimeRecoveryEnabled: aws.Bool(true),
 		},
+		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		SortKey: &awsdynamodb.Attribute{
 			Name: aws.String("ID"),
 			Type: awsdynamodb.AttributeType_STRING,
@@ -139,29 +185,50 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	limitTable := awsdynamodb.NewTable(stack, jsii.String("Spider42Limits"), &awsdynamodb.TableProps{
 		BillingMode: awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		PartitionKey: &awsdynamodb.Attribute{
-			Name: aws.String("table_name"),
+			Name: aws.String("TABLE_NAME"),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
+		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
 			PointInTimeRecoveryEnabled: aws.Bool(true),
 		},
 		SortKey: &awsdynamodb.Attribute{
-			Name: aws.String("id"),
+			Name: aws.String("ID"),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
 		TableName: jsii.String("Spider42Limits"),
 	})
 
 	spider42Bucket := awss3.NewBucket(stack, jsii.String("Spider42Bucket"), &awss3.BucketProps{
+		AutoDeleteObjects: jsii.Bool(true),
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
 		EnforceSSL:        jsii.Bool(true),
 		PublicReadAccess:  jsii.Bool(false),
+		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
 		Versioned:         jsii.Bool(true),
+	})
+
+	snsLogRole := awsiam.NewRole(stack, aws.String("spider42SnsLogRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(aws.String("sns.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
+		ManagedPolicies: &[]awsiam.IManagedPolicy{
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("CloudWatchLogsFullAccess"), aws.String("arn:aws:iam::aws:policy/CloudWatchLogsFullAccess")),
+		},
 	})
 
 	spider42JobDone := awssns.NewTopic(stack, jsii.String("Spider42JobDone"), &awssns.TopicProps{
 		DisplayName: jsii.String("Spider42JobDone"),
+		LoggingConfigs: &[]*awssns.LoggingConfig{
+			{
+				Protocol:                  awssns.LoggingProtocol_APPLICATION,
+				FailureFeedbackRole:       snsLogRole,
+				SuccessFeedbackRole:       snsLogRole,
+				SuccessFeedbackSampleRate: jsii.Number(100),
+			},
+		},
+		TopicName: jsii.String("Spider42JobDone"),
 	})
+
+	spider42JobDone.GrantPublish(snsLogRole)
 
 	awssns.NewSubscription(stack, jsii.String("Spider42JobDoneSubscription"), &awssns.SubscriptionProps{
 		Topic:    spider42JobDone,
@@ -183,7 +250,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		DefaultBehavior: cloudfrontDefaultBehavior,
 	})
 
-	// create lambda function
+	spider42Bucket.GrantReadWrite(lambdaRole, "*")
+
+	// create lambda functions
 	lambdaFetchStores := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchStores"), &awscdklambdagoalpha.GoFunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
 		Bundling: &awscdklambdagoalpha.BundlingOptions{
@@ -247,10 +316,22 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Timeout:       awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 
+	// secret
 	awssecretsmanager.NewSecret(stack, jsii.String("Spider42SecretsManager"), &awssecretsmanager.SecretProps{
 		Description:       jsii.String("A secret for Spider42"),
+		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
 		SecretName:        jsii.String("Spider42Secret"),
 		SecretStringValue: awscdk.SecretValue_UnsafePlainText(jsii.String(os.Getenv("SPIDER42_SECRET"))),
+	})
+
+	// log schedule output
+	awscdk.NewCfnOutput(stack, jsii.String("spider42StoreSchedule"), &awscdk.CfnOutputProps{
+		Description: jsii.String("Spider42 Store Schedule"),
+		Value:       storeSchedule.ScheduleName(),
+	})
+	awscdk.NewCfnOutput(stack, jsii.String("spider42UpdateSchedule"), &awscdk.CfnOutputProps{
+		Description: jsii.String("Spider42 Update Schedule"),
+		Value:       updateSchedule.ScheduleName(),
 	})
 
 	// log queue URLs
