@@ -51,20 +51,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// The code that defines your stack goes here
 
-	logPolicy := awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("CloudWatchLogsFullAccess"), aws.String("arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"))
-
-	// create role
-	lambdaRole := awsiam.NewRole(stack, aws.String("spider42LambdaRole"), &awsiam.RoleProps{
-		AssumedBy: awsiam.NewServicePrincipal(aws.String("lambda.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
-		ManagedPolicies: &[]awsiam.IManagedPolicy{
-			logPolicy,
-			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("AWSLambda_ReadOnlyAccess"), aws.String("arn:aws:iam::aws:policy/AWSLambda_ReadOnlyAccess")),
-		},
-	})
-
 	// create SQS queue
 	storeDeadQueue := awssqs.NewQueue(stack, jsii.String("spider42StoreDeadQueue"), &awssqs.QueueProps{
-		EnforceSSL:             jsii.Bool(true),
+		// EnforceSSL:             jsii.Bool(true),
 		QueueName:              jsii.String("Spider42StoreDeadQueue"),
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
 		RetentionPeriod:        awscdk.Duration_Hours(jsii.Number(12)),
@@ -75,14 +64,14 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			MaxReceiveCount: jsii.Number(5),
 			Queue:           storeDeadQueue,
 		},
-		EnforceSSL:             jsii.Bool(true),
+		// EnforceSSL:             jsii.Bool(true),
 		QueueName:              jsii.String("Spider42StoreQueue"),
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
 		RetentionPeriod:        awscdk.Duration_Hours(jsii.Number(12)),
 		VisibilityTimeout:      awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 	updateDeadQueue := awssqs.NewQueue(stack, jsii.String("spider42UpdateDeadQueue"), &awssqs.QueueProps{
-		EnforceSSL:             jsii.Bool(true),
+		// EnforceSSL:             jsii.Bool(true),
 		QueueName:              jsii.String("Spider42UpdateDeadQueue"),
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
 		RetentionPeriod:        awscdk.Duration_Hours(jsii.Number(12)),
@@ -93,24 +82,19 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			MaxReceiveCount: jsii.Number(5),
 			Queue:           updateDeadQueue,
 		},
-		EnforceSSL:             jsii.Bool(true),
+		// EnforceSSL:             jsii.Bool(true),
 		QueueName:              jsii.String("Spider42UpdateQueue"),
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)),
 		RetentionPeriod:        awscdk.Duration_Hours(jsii.Number(12)),
 		VisibilityTimeout:      awscdk.Duration_Seconds(jsii.Number(90)),
 	})
 
-	storeQueue.GrantConsumeMessages(lambdaRole)
-	storeQueue.GrantSendMessages(lambdaRole)
-	updateQueue.GrantConsumeMessages(lambdaRole)
-	updateQueue.GrantSendMessages(lambdaRole)
-
 	// create EventBridge scheduler
 	when := time.Now().UTC()
-	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) {
-		when = time.Date(when.Year(), when.Month(), when.Day()+1, 7, 55, 0, 0, time.UTC)
+	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) || true {
+		when = time.Date(when.Year(), when.Month(), when.Day(), 7, 40, 0, 0, time.UTC)
 	} else {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 7, 55, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
 	}
 	scheduleGroup := awsscheduler.NewScheduleGroup(stack, jsii.String("Spider42ScheduleGroup"), &awsscheduler.ScheduleGroupProps{
 		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
@@ -201,10 +185,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		TableName: jsii.String("Spider42Limits"),
 	})
 
-	storesTable.GrantReadWriteData(lambdaRole)
-	storesUpdatesTable.GrantReadWriteData(lambdaRole)
-	limitTable.GrantReadWriteData(lambdaRole)
-
 	spider42Bucket := awss3.NewBucket(stack, jsii.String("Spider42Bucket"), &awss3.BucketProps{
 		AutoDeleteObjects: jsii.Bool(true),
 		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
@@ -217,7 +197,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	snsLogRole := awsiam.NewRole(stack, aws.String("spider42SnsLogRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(aws.String("sns.amazonaws.com"), &awsiam.ServicePrincipalOpts{}),
 		ManagedPolicies: &[]awsiam.IManagedPolicy{
-			logPolicy,
+			awsiam.ManagedPolicy_FromManagedPolicyArn(stack, aws.String("CloudWatchLogsFullAccess"), aws.String("arn:aws:iam::aws:policy/CloudWatchLogsFullAccess")),
 		},
 	})
 
@@ -233,9 +213,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		},
 		TopicName: jsii.String("Spider42JobDone"),
 	})
-
-	spider42JobDone.GrantPublish(lambdaRole)
-	spider42JobDone.GrantSubscribe(snsLogRole)
 
 	awssns.NewSubscription(stack, jsii.String("Spider42JobDoneSubscription"), &awssns.SubscriptionProps{
 		Topic:    spider42JobDone,
@@ -257,8 +234,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		DefaultBehavior: cloudfrontDefaultBehavior,
 	})
 
-	spider42Bucket.GrantPut(lambdaRole, "*")
-
 	// create lambda functions
 	lambdaFetchStores := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchStores"), &awscdklambdagoalpha.GoFunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -269,7 +244,8 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			},
 			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
 		},
-		Entry: jsii.String("./lambdaFetchStores"),
+		DeadLetterQueueEnabled: jsii.Bool(true),
+		Entry:                  jsii.String("./lambdaFetchStores"),
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_FETCH_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
@@ -284,12 +260,19 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 				BatchSize:      jsii.Number(1),
 				Enabled:        jsii.Bool(true),
 				MaxConcurrency: jsii.Number(2),
+				MetricsConfig: &awslambda.MetricsConfig{
+					Metrics: &[]awslambda.MetricType{
+						awslambda.MetricType_EVENT_COUNT,
+					},
+				},
+				ReportBatchItemFailures: jsii.Bool(true),
 			}),
 		},
-		RecursiveLoop: awslambda.RecursiveLoop_ALLOW,
-		Role:          lambdaRole,
-		Runtime:       awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout:       awscdk.Duration_Seconds(jsii.Number(90)),
+		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
+		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
+		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing:         awslambda.Tracing_ACTIVE,
 	})
 	lambdaFetchUpdates := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchUpdates"), &awscdklambdagoalpha.GoFunctionProps{
 		Architecture: awslambda.Architecture_ARM_64(),
@@ -300,7 +283,8 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			},
 			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
 		},
-		Entry: jsii.String("./lambdaFetchUpdates"),
+		DeadLetterQueueEnabled: jsii.Bool(true),
+		Entry:                  jsii.String("./lambdaFetchUpdates"),
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
@@ -317,11 +301,220 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 				MaxConcurrency: jsii.Number(2),
 			}),
 		},
-		RecursiveLoop: awslambda.RecursiveLoop_ALLOW,
-		Role:          lambdaRole,
-		Runtime:       awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout:       awscdk.Duration_Seconds(jsii.Number(90)),
+		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
+		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
+		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing:         awslambda.Tracing_ACTIVE,
 	})
+
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("s3:PutObject"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			spider42Bucket.BucketArn(),
+		},
+	}))
+
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("kms:GenerateDataKey"),
+			jsii.String("kms:Decrypt"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:kms:*:*:key/*"),
+		},
+	}))
+
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			storeQueue.QueueArn(),
+			storeDeadQueue.QueueArn(),
+		},
+	}))
+
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("secretsmanager:DescribeSecret"),
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:ListSecretVersionIds"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:secretsmanager:*:*:secret:*"),
+		},
+	}))
+
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("s3:PutObject"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			spider42Bucket.BucketArn(),
+		},
+	}))
+
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("kms:GenerateDataKey"),
+			jsii.String("kms:Decrypt"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:kms:*:*:key/*"),
+		},
+	}))
+
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			updateQueue.QueueArn(),
+			updateDeadQueue.QueueArn(),
+		},
+	}))
+
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("secretsmanager:DescribeSecret"),
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:ListSecretVersionIds"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:secretsmanager:*:*:secret:*"),
+		},
+	}))
+
+	storeQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("lambda:InvokeFunction"),
+		},
+		Resources: &[]*string{
+			lambdaFetchStores.FunctionArn(),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Principals: &[]awsiam.IPrincipal{
+			awsiam.NewServicePrincipal(jsii.String("sqs.amazonaws.com"), &awsiam.ServicePrincipalOpts{
+				Region: jsii.String(os.Getenv("CDK_DEFAULT_REGION")),
+			}),
+		},
+		Conditions: &map[string]any{
+			"ArnEquals": &map[string]any{
+				"aws:SourceArn": storeQueue.QueueArn(),
+			},
+		},
+	}))
+
+	updateQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("lambda:InvokeFunction"),
+		},
+		Resources: &[]*string{
+			lambdaFetchUpdates.FunctionArn(),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Principals: &[]awsiam.IPrincipal{
+			awsiam.NewServicePrincipal(jsii.String("sqs.amazonaws.com"), &awsiam.ServicePrincipalOpts{
+				Region: jsii.String(os.Getenv("CDK_DEFAULT_REGION")),
+			}),
+		},
+		Conditions: &map[string]any{
+			"ArnEquals": &map[string]any{
+				"aws:SourceArn": updateQueue.QueueArn(),
+			},
+		},
+	}))
+
+	storeQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			storeQueue.QueueArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchStores.Role(),
+		},
+	}))
+	storeDeadQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			storeDeadQueue.QueueArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchStores.Role(),
+		},
+	}))
+
+	updateQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			updateQueue.QueueArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchUpdates.Role(),
+		},
+	}))
+	updateDeadQueue.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("sqs:ChangeMessageVisibility"),
+			jsii.String("sqs:DeleteMessage"),
+			jsii.String("sqs:ReceiveMessage"),
+			jsii.String("sqs:GetQueueAttributes"),
+			jsii.String("sqs:GetQueueUrl"),
+			jsii.String("sqs:SendMessage"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			updateDeadQueue.QueueArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchUpdates.Role(),
+		},
+	}))
 
 	// secret
 	spider42Secret := awssecretsmanager.NewSecret(stack, jsii.String("Spider42SecretsManager"), &awssecretsmanager.SecretProps{
@@ -331,7 +524,35 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		SecretStringValue: awscdk.SecretValue_UnsafePlainText(jsii.String(os.Getenv("SPIDER42_SECRET"))),
 	})
 
-	spider42Secret.GrantRead(lambdaRole, nil)
+	spider42Secret.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("secretsmanager:DescribeSecret"),
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:ListSecretVersionIds"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			spider42Secret.SecretArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchStores.Role(),
+		},
+	}))
+
+	spider42Secret.AddToResourcePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("secretsmanager:DescribeSecret"),
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:ListSecretVersionIds"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			spider42Secret.SecretArn(),
+		},
+		Principals: &[]awsiam.IPrincipal{
+			lambdaFetchUpdates.Role(),
+		},
+	}))
 
 	// log schedule output
 	awscdk.NewCfnOutput(stack, jsii.String("spider42StoreSchedule"), &awscdk.CfnOutputProps{
