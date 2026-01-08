@@ -97,7 +97,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		}),
 		Target: awsschedulertargets.NewSqsSendMessage(storeQueue, &awsschedulertargets.SqsSendMessageProps{
 			DeadLetterQueue: storeDeadQueue,
-			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("\"End\"")),
+			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
 		ScheduleGroup: scheduleGroup,
@@ -110,7 +110,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		}),
 		Target: awsschedulertargets.NewSqsSendMessage(updateQueue, &awsschedulertargets.SqsSendMessageProps{
 			DeadLetterQueue: updateDeadQueue,
-			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("\"End\"")),
+			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 
 	// create DynamoDB table
