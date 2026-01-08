@@ -280,14 +280,11 @@ pub async fn retry_tomorrow(
     } else {
         panic!("Failed to set time");
     }
-    let diff = today_time - now;
-    let diff2 = today_time + chrono::Duration::days(1) - now;
-    let dest_time;
-    if diff.abs() < diff2.abs() {
-        dest_time = today_time;
+    let dest_time = if today_time <= now {
+        today_time + chrono::Duration::days(1)
     } else {
-        dest_time = today_time + chrono::Duration::days(1);
-    }
+        today_time
+    };
     let rule_name = format!("spider42_fetch_{}", dest_time.timestamp_micros());
     ev.put_rule()
         .name(&rule_name)
