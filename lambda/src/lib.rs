@@ -14,6 +14,7 @@ pub enum MyError {
     NoReceiptHandle,
     StoreInfosEmpty,
     NoLimit,
+    NoEnvVar(String),
 }
 
 impl std::fmt::Display for MyError {
@@ -32,6 +33,7 @@ impl std::fmt::Display for MyError {
             MyError::NoReceiptHandle => write!(f, "No receipt handle found"),
             MyError::StoreInfosEmpty => write!(f, "No store infos found"),
             MyError::NoLimit => write!(f, "No limit found"),
+            MyError::NoEnvVar(var) => write!(f, "No environment variable found: {}", var),
         }
     }
 }
@@ -298,7 +300,10 @@ pub async fn retry_tomorrow(
         .targets(
             aws_sdk_eventbridge::types::Target::builder()
                 .id(format!("{}_target", rule_name))
-                .arn(std::env::var("LAMBDA_ARN")?)
+                .arn(
+                    std::env::var("LAMBDA_ARN")
+                        .map_err(|_| MyError::NoEnvVar("LAMBDA_ARN".to_string()))?,
+                )
                 .input(serde_json::to_string(&payload)?)
                 .build()?,
         )
@@ -386,7 +391,7 @@ macro_rules! inject_id {
 macro_rules! atomic_puts {
     ($items:ident, $db:ident, $name:literal, $no:literal) => {
         if $name == "BSSH_NM" {
-            let table_name = env::var("TABLE_NAME")?;
+            let table_name = env::var("TABLE_NAME").map_err(|_| MyError::NoEnvVar("TABLE_NAME".to_string()))?;
             for ws in $items.into_iter().chunks(100).into_iter().map(|is| is.map( |i| { Put::builder()
                     .table_name(&table_name)
                     .set_item(Some(i))
@@ -424,14 +429,14 @@ macro_rules! handle {
             let payload = event.payload;
             tracing::info!("Payload: {:?}", payload);
 
-            let queue = env::var("QUEUE_URL")?;
-            let table_name = env::var("TABLE_NAME")?;
-            let limit_table = env::var("LIMIT_TABLE_NAME")?;
-            let api_action = env::var("API_ACTION")?;
-            let sns_arn = env::var("SNS_ARN")?;
+            let queue = env::var("QUEUE_URL").map_err(|_| MyError::NoEnvVar("QUEUE_URL".to_string()))?;
+            let table_name = env::var("TABLE_NAME").map_err(|_| MyError::NoEnvVar("TABLE_NAME".to_string()))?;
+            let limit_table = env::var("LIMIT_TABLE_NAME").map_err(|_| MyError::NoEnvVar("LIMIT_TABLE_NAME".to_string()))?;
+            let api_action = env::var("API_ACTION").map_err(|_| MyError::NoEnvVar("API_ACTION".to_string()))?;
+            let sns_arn = env::var("SNS_ARN").map_err(|_| MyError::NoEnvVar("SNS_ARN".to_string()))?;
 
             if let Ok(qevent) = serde_json::from_value::<SqsEvent>(payload.clone()) {
-                let xl_bucket = env::var("BUCKET_NAME")?;
+                let xl_bucket = env::var("BUCKET_NAME").map_err(|_| MyError::NoEnvVar("BUCKET_NAME".to_string()))?;
 
                 for record in qevent.records {
                     let body = record.body.ok_or(MyError::EmptyBody)?;
@@ -627,14 +632,14 @@ macro_rules! handle {
                             tracing::info!("{:?}", res);
 
                             if res.count < 1 {
-                                return Err(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>);
+                                return Err(Box::new(MyError::NoLimit));
                             }
 
                             let limit: Limit = serde_dynamo::from_item(
                                 res.items
-                                    .ok_or(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>)?
+                                    .ok_or(Box::new(MyError::NoLimit))?
                                     .pop()
-                                    .ok_or(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>)?,
+                                    .ok_or(Box::new(MyError::NoLimit))?,
                             )?;
 
                             let mut infos: Vec<$t>;
@@ -707,8 +712,8 @@ macro_rules! handle {
                             sns
                                 .publish()
                                 .topic_arn(&sns_arn)
-                                .subject(env::var("EMAIL_SUBJECT")?)
-                                .message(env::var("EMAIL_MESSAGE")?)
+                                .subject(env::var("EMAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("EMAIL_SUBJECT".to_string()))?)
+                                .message(env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?)
                                 .send()
                                 .await?;
                         }
@@ -755,21 +760,21 @@ macro_rules! handle {
                             .await?;
                         match serde_dynamo::from_item::<_, Limit>(
                             rec.items
-                                .ok_or(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>)?
+                                .ok_or(Box::new(MyError::NoLimit))?
                                 .pop()
-                                .ok_or(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>)?,
+                                .ok_or(Box::new(MyError::NoLimit))?,
                         ) {
                             Ok(l) => match l.last_idx
                             {
                                 Some((f, u)) => send_queue(&sqs, &queue, Payload::Between(f, u)).await,
-                                None => Err(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>),
+                                None => Err(Box::new(MyError::NoLimit)),
                             },
-                            Err(e) => Err(Box::new(MyError::NoLimit) as Box<dyn std::error::Error+Send+Sync>),
+                            Err(e) => Err(Box::new(MyError::NoLimit)),
                         }
                     }
                 }
             } else {
-                Err(Box::new(MyError::UnsupportedEventType) as Box<dyn std::error::Error+Send+Sync>)
+                Err(Box::new(MyError::UnsupportedEventType))
             }
         }
     }

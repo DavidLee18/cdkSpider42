@@ -283,6 +283,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Tracing:         awslambda.Tracing_ACTIVE,
 	})
 
+	lambdaFetchStores.AddEnvironment(jsii.String("LAMBDA_ARN"), jsii.Sprintf("arn:aws:lambda:%s:%s:function:Spider42FetchStores", os.Getenv("CDK_DEFAULT_REGION"), os.Getenv("CDK_DEFAULT_ACCOUNT")), nil)
+	lambdaFetchUpdates.AddEnvironment(jsii.String("LAMBDA_ARN"), jsii.Sprintf("arn:aws:lambda:%s:%s:function:Spider42FetchUpdates", os.Getenv("CDK_DEFAULT_REGION"), os.Getenv("CDK_DEFAULT_ACCOUNT")), nil)
+
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("s3:PutObject"),
@@ -292,7 +295,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			spider42Bucket.BucketArn(),
 		},
 	}))
-
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("kms:GenerateDataKey"),
@@ -303,7 +305,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			jsii.String("arn:aws:kms:*:*:key/*"),
 		},
 	}))
-
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("sqs:ChangeMessageVisibility"),
@@ -319,7 +320,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			storeDeadQueue.QueueArn(),
 		},
 	}))
-
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("secretsmanager:DescribeSecret"),
@@ -331,7 +331,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			jsii.String("arn:aws:secretsmanager:*:*:secret:*"),
 		},
 	}))
-
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:Query"),
@@ -341,6 +340,25 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
 			jsii.String("arn:aws:dynamodb:*:*:table/*"),
+		},
+	}))
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("events:PutRule"),
+			jsii.String("events:PutTargets"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:events:*:*:rule/*"),
+		},
+	}))
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("s3:PutObject"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:s3:::*"),
 		},
 	}))
 
@@ -353,7 +371,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			spider42Bucket.BucketArn(),
 		},
 	}))
-
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("kms:GenerateDataKey"),
@@ -364,7 +381,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			jsii.String("arn:aws:kms:*:*:key/*"),
 		},
 	}))
-
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("sqs:ChangeMessageVisibility"),
@@ -380,7 +396,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			updateDeadQueue.QueueArn(),
 		},
 	}))
-
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("secretsmanager:DescribeSecret"),
@@ -392,7 +407,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			jsii.String("arn:aws:secretsmanager:*:*:secret:*"),
 		},
 	}))
-
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("dynamodb:Query"),
@@ -402,6 +416,25 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
 			jsii.String("arn:aws:dynamodb:*:*:table/*"),
+		},
+	}))
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("events:PutRule"),
+			jsii.String("events:PutTargets"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:events:*:*:rule/*"),
+		},
+	}))
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("s3:PutObject"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:s3:::*"),
 		},
 	}))
 
