@@ -24,3 +24,5 @@ cdk_spider42
 .idea/
 
 .DS_Store
+
+lambda/target/

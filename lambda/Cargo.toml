@@ -1,0 +1,25 @@
+[package]
+name = "spider42"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+aws-config = { version = "1.8.11", features = ["behavior-version-latest", "rustls"] }
+aws-sdk-dynamodb = "1.100.0"
+aws-sdk-eventbridge = "1.98.0"
+aws-sdk-s3 = "1.118.0"
+aws-sdk-secretsmanager = "1.95.0"
+aws-sdk-sns = "1.92.0"
+aws-sdk-sqs = "1.90.0"
+aws_lambda_events = { version = "1.0.0", default-features = false, features = ["apigw", "sqs", "eventbridge"] }
+chrono = { version = "0.4.42", features = ["serde"] }
+itertools = "0.14.0"
+lambda_runtime = "1.0.1"
+minreq = { version = "2.14.1", features = ["json-using-serde", "https-rustls-probe"] }
+rust_xlsxwriter = { version = "0.92.2", features = ["serde", "chrono"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
+serde_json = "1.0.145"
+serde_path_to_error = "0.1.20"
+tokio = { version = "1", features = ["macros"] }
+uuid = { version = "1.18.1", features = ["fast-rng", "v4", "v7", "serde"] }

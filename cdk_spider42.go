@@ -18,7 +18,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
-	"github.com/aws/aws-cdk-go/awscdklambdagoalpha/v2"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
@@ -92,7 +91,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	// create EventBridge scheduler
 	when := time.Now().UTC()
 	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) || true {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 7, 40, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day(), 5, 15, 0, 0, time.UTC)
 	} else {
 		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
 	}
@@ -235,17 +234,10 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	})
 
 	// create lambda functions
-	lambdaFetchStores := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchStores"), &awscdklambdagoalpha.GoFunctionProps{
-		Architecture: awslambda.Architecture_ARM_64(),
-		Bundling: &awscdklambdagoalpha.BundlingOptions{
-			Environment: &map[string]*string{
-				"GOARCH":      aws.String("arm64"),
-				"CGO_ENABLED": aws.String("0"),
-			},
-			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
-		},
+	lambdaFetchStores := awslambda.NewFunction(stack, jsii.String("spider42FetchStores"), &awslambda.FunctionProps{
+		Architecture:           awslambda.Architecture_ARM_64(),
+		Code:                   awslambda.AssetCode_FromAsset(jsii.String(os.Getenv("PWD")+"/lambda/target/lambda/spider42_fetch_stores"), nil),
 		DeadLetterQueueEnabled: jsii.Bool(true),
-		Entry:                  jsii.String("./lambdaFetchStores"),
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_FETCH_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
@@ -253,7 +245,8 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			"QUEUE_URL":        storeQueue.QueueUrl(),
 			"TABLE_NAME":       storesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
-			"DIST_URL":         dist.DomainName(),
+			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_STORE_SUBJECT")),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_STORE_MESSAGE") + *dist.DomainName() + "/stores.xlsx"),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(storeQueue, &awslambdaeventsources.SqsEventSourceProps{
@@ -268,23 +261,19 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 				ReportBatchItemFailures: jsii.Bool(true),
 			}),
 		},
+		FunctionName:    jsii.String("Spider42FetchStores"),
+		Handler:         jsii.String("bootstrap"),
 		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
 		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
-		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
-		Tracing:         awslambda.Tracing_ACTIVE,
+		// ReservedConcurrentExecutions: jsii.Number(1),
+		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing: awslambda.Tracing_ACTIVE,
 	})
-	lambdaFetchUpdates := awscdklambdagoalpha.NewGoFunction(stack, jsii.String("spider42FetchUpdates"), &awscdklambdagoalpha.GoFunctionProps{
-		Architecture: awslambda.Architecture_ARM_64(),
-		Bundling: &awscdklambdagoalpha.BundlingOptions{
-			Environment: &map[string]*string{
-				"GOARCH":      aws.String("arm64"),
-				"CGO_ENABLED": aws.String("0"),
-			},
-			GoBuildFlags: jsii.Strings(`-ldflags "-s -w"`),
-		},
+	lambdaFetchUpdates := awslambda.NewFunction(stack, jsii.String("spider42FetchUpdates"), &awslambda.FunctionProps{
+		Architecture:           awslambda.Architecture_ARM_64(),
+		Code:                   awslambda.AssetCode_FromAsset(jsii.String(os.Getenv("PWD")+"/lambda/target/lambda/spider42_fetch_updates"), nil),
 		DeadLetterQueueEnabled: jsii.Bool(true),
-		Entry:                  jsii.String("./lambdaFetchUpdates"),
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
@@ -292,20 +281,30 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			"QUEUE_URL":        updateQueue.QueueUrl(),
 			"TABLE_NAME":       storesUpdatesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
-			"DIST_URL":         dist.DomainName(),
+			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_UPDATE_SUBJECT")),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_UPDATE_MESSAGE") + *dist.DomainName() + "/updates.xlsx"),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(updateQueue, &awslambdaeventsources.SqsEventSourceProps{
 				BatchSize:      jsii.Number(1),
 				Enabled:        jsii.Bool(true),
 				MaxConcurrency: jsii.Number(2),
+				MetricsConfig: &awslambda.MetricsConfig{
+					Metrics: &[]awslambda.MetricType{
+						awslambda.MetricType_EVENT_COUNT,
+					},
+				},
+				ReportBatchItemFailures: jsii.Bool(true),
 			}),
 		},
+		FunctionName:    jsii.String("Spider42FetchUpdates"),
+		Handler:         jsii.String("bootstrap"),
 		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
 		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
-		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
-		Tracing:         awslambda.Tracing_ACTIVE,
+		// ReservedConcurrentExecutions: jsii.Number(1),
+		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing: awslambda.Tracing_ACTIVE,
 	})
 
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
