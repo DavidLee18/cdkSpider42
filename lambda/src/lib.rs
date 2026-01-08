@@ -417,13 +417,12 @@ macro_rules! handle {
                 for record in qevent.records {
                     let body = record.body.ok_or(MyError::EmptyBody)?;
                     let de = &mut serde_json::Deserializer::from_str(&body);
-                    let scrt = get_secret(&secretsm, "FOOD_SAFETY_KOREA_API_KEY").await?;
-                    let mut scrt: serde_json::Value = serde_json::from_str(&scrt)?;
+                    let scrt = get_secret(&secretsm, "Spider42Secret").await?;
                     match serde_path_to_error::deserialize(de)? {
                         Payload::Start(from, until) => {
                             let url = format!(
                                 "http://openapi.foodsafetykorea.go.kr/api/{}/{}/json/{}/{}",
-                                serde_json::from_value::<String>(scrt["FOOD_SAFETY_KOREA_API_KEY"].take())?,
+                                scrt,
                                 api_action,
                                 from,
                                 until
@@ -525,7 +524,7 @@ macro_rules! handle {
                         Payload::Between(from, until) => {
                             let url = format!(
                                 "http://openapi.foodsafetykorea.go.kr/api/{}/{}/json/{}/{}",
-                                serde_json::from_value::<String>(scrt["FOOD_SAFETY_KOREA_API_KEY"].take())?,
+                                scrt,
                                 api_action,
                                 from,
                                 until
