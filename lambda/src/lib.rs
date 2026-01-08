@@ -209,11 +209,15 @@ pub enum Payload {
 
 #[derive(Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct Limit {
+    #[serde(rename = "TABLE_NAME")]
     pub table_name: String,
+    #[serde(rename = "ID")]
     pub id: Uuid,
+    #[serde(rename = "FIELD_NAME")]
     pub field_name: String,
+    #[serde(rename = "VALUE")]
     pub value: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "LAST_IDX", skip_serializing_if = "Option::is_none")]
     pub last_idx: Option<(u32, u32)>,
 }
 
@@ -266,7 +270,22 @@ pub async fn retry_tomorrow(
     ev: &aws_sdk_eventbridge::Client,
     payload: Payload,
 ) -> Result<(), lambda_runtime::Error> {
-    let dest_time = chrono::Utc::now() + chrono::Duration::days(1);
+    let now = chrono::Utc::now();
+    let mut today_time = now.clone();
+    let today_time_res = today_time.with_time(chrono::NaiveTime::from_hms_opt(10, 30, 0).unwrap());
+    if let chrono::LocalResult::Single(t) = today_time_res {
+        today_time = t;
+    } else {
+        panic!("Failed to set time");
+    }
+    let diff = today_time - now;
+    let diff2 = today_time + chrono::Duration::days(1) - now;
+    let dest_time;
+    if diff.abs() < diff2.abs() {
+        dest_time = today_time;
+    } else {
+        dest_time = today_time + chrono::Duration::days(1);
+    }
     let rule_name = format!("spider42_fetch_{}", dest_time.timestamp_micros());
     ev.put_rule()
         .name(&rule_name)
@@ -594,7 +613,7 @@ macro_rules! handle {
                             let res = db
                                 .query()
                                 .table_name(&limit_table)
-                                .key_condition_expression("table_name = :table_name")
+                                .key_condition_expression("TABLE_NAME = :table_name")
                                 .expression_attribute_values(
                                     ":table_name",
                                     aws_sdk_dynamodb::types::AttributeValue::S(table_name.clone()),
@@ -724,7 +743,7 @@ macro_rules! handle {
                         let rec = db
                             .query()
                             .table_name(limit_table)
-                            .key_condition_expression("table_name = :table_name")
+                            .key_condition_expression("TABLE_NAME = :table_name")
                             .expression_attribute_values(
                                 ":table_name",
                                 aws_sdk_dynamodb::types::AttributeValue::S(table_name),
@@ -754,4 +773,15 @@ macro_rules! handle {
             }
         }
     }
+}
+
+#[test]
+fn simple_test() -> Result<(), Box<dyn std::error::Error>> {
+    println!("{:?}", serde_json::to_string(&Payload::Start(0, 999))?);
+    println!(
+        "{:?}",
+        serde_json::to_string(&Payload::Between(1000, 1999))?
+    );
+    println!("{:?}", serde_json::to_string(&Payload::End)?);
+    Ok(())
 }

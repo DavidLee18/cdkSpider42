@@ -23,20 +23,6 @@ import (
 	"github.com/aws/jsii-runtime-go"
 )
 
-type PayloadType uint8
-
-const (
-	PayloadStart PayloadType = iota
-	PayloadBetween
-	PayloadEnd
-)
-
-type Payload struct {
-	Type  PayloadType `json:"TYPE"`
-	From  int64       `json:"FROM"`
-	Until int64       `json:"UNTIL"`
-}
-
 type CdkSpider42StackProps struct {
 	awscdk.StackProps
 }
@@ -60,7 +46,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	})
 	storeQueue := awssqs.NewQueue(stack, jsii.String("spider42StoreQueue"), &awssqs.QueueProps{
 		DeadLetterQueue: &awssqs.DeadLetterQueue{
-			MaxReceiveCount: jsii.Number(5),
+			MaxReceiveCount: jsii.Number(1000),
 			Queue:           storeDeadQueue,
 		},
 		// EnforceSSL:             jsii.Bool(true),
@@ -78,7 +64,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	})
 	updateQueue := awssqs.NewQueue(stack, jsii.String("spider42UpdateQueue"), &awssqs.QueueProps{
 		DeadLetterQueue: &awssqs.DeadLetterQueue{
-			MaxReceiveCount: jsii.Number(5),
+			MaxReceiveCount: jsii.Number(1000),
 			Queue:           updateDeadQueue,
 		},
 		// EnforceSSL:             jsii.Bool(true),
@@ -91,7 +77,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	// create EventBridge scheduler
 	when := time.Now().UTC()
 	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) || true {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 5, 15, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day(), 9, 10, 0, 0, time.UTC)
 	} else {
 		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
 	}
@@ -110,11 +96,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		}),
 		Target: awsschedulertargets.NewSqsSendMessage(storeQueue, &awsschedulertargets.SqsSendMessageProps{
 			DeadLetterQueue: storeDeadQueue,
-			Input: awsscheduler.ScheduleTargetInput_FromObject(Payload{
-				Type:  PayloadStart,
-				From:  0,
-				Until: 999,
-			}),
+			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
 		ScheduleGroup: scheduleGroup,
@@ -127,11 +109,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		}),
 		Target: awsschedulertargets.NewSqsSendMessage(updateQueue, &awsschedulertargets.SqsSendMessageProps{
 			DeadLetterQueue: updateDeadQueue,
-			Input: awsscheduler.ScheduleTargetInput_FromObject(Payload{
-				Type:  PayloadStart,
-				From:  0,
-				Until: 999,
-			}),
+			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 
 	// create DynamoDB table
@@ -265,10 +243,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Handler:         jsii.String("bootstrap"),
 		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
 		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
-		// ReservedConcurrentExecutions: jsii.Number(1),
-		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
-		Tracing: awslambda.Tracing_ACTIVE,
+		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing:         awslambda.Tracing_ACTIVE,
 	})
 	lambdaFetchUpdates := awslambda.NewFunction(stack, jsii.String("spider42FetchUpdates"), &awslambda.FunctionProps{
 		Architecture:           awslambda.Architecture_ARM_64(),
@@ -301,10 +278,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Handler:         jsii.String("bootstrap"),
 		InsightsVersion: awslambda.LambdaInsightsVersion_VERSION_1_0_498_0(),
 		RecursiveLoop:   awslambda.RecursiveLoop_ALLOW,
-		// ReservedConcurrentExecutions: jsii.Number(1),
-		Runtime: awslambda.Runtime_PROVIDED_AL2023(),
-		Timeout: awscdk.Duration_Seconds(jsii.Number(90)),
-		Tracing: awslambda.Tracing_ACTIVE,
+		Runtime:         awslambda.Runtime_PROVIDED_AL2023(),
+		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
+		Tracing:         awslambda.Tracing_ACTIVE,
 	})
 
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
@@ -356,6 +332,18 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		},
 	}))
 
+	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:Query"),
+			jsii.String("dynamodb:PutItem"),
+			jsii.String("dynamodb:UpdateItem"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:dynamodb:*:*:table/*"),
+		},
+	}))
+
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
 			jsii.String("s3:PutObject"),
@@ -402,6 +390,18 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
 			jsii.String("arn:aws:secretsmanager:*:*:secret:*"),
+		},
+	}))
+
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("dynamodb:Query"),
+			jsii.String("dynamodb:PutItem"),
+			jsii.String("dynamodb:UpdateItem"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			jsii.String("arn:aws:dynamodb:*:*:table/*"),
 		},
 	}))
 
