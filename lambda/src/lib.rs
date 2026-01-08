@@ -645,7 +645,7 @@ macro_rules! handle {
                                 .query()
                                 .table_name(&limit.table_name)
                                 .key_condition_expression(format!(
-                                    "{} >= :val and ID >= :id",
+                                    "{} = :val and ID >= :id",
                                     limit.field_name
                                 ))
                                 .expression_attribute_values(
@@ -667,7 +667,7 @@ macro_rules! handle {
                                     .query()
                                     .table_name(&limit.table_name)
                                     .key_condition_expression(format!(
-                                        "{} >= :val and ID >= :id",
+                                        "{} = :val and ID >= :id",
                                         limit.field_name
                                     ))
                                     .expression_attribute_values(

@@ -77,7 +77,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	// create EventBridge scheduler
 	when := time.Now().UTC()
 	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) || true {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 11, 40, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day()+1, 10, 30, 0, 0, time.UTC)
 	} else {
 		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
 	}
@@ -99,6 +99,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("\"End\"")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
+		Enabled:       jsii.Bool(false),
 		ScheduleGroup: scheduleGroup,
 		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
 			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
@@ -367,7 +368,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		},
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
-			jsii.String("arn:aws:sns:::*"),
+			jsii.String("arn:aws:sns:*:*:*"),
 		},
 	}))
 
@@ -452,7 +453,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		},
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
-			jsii.String("arn:aws:sns:::*"),
+			jsii.String("arn:aws:sns:*:*:*"),
 		},
 	}))
 
