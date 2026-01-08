@@ -86,6 +86,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		ScheduleGroupName: jsii.String("Spider42ScheduleGroup"),
 	})
 	storeSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42StoreSchedule"), &awsscheduler.ScheduleProps{
+		Enabled:       jsii.Bool(false),
 		ScheduleGroup: scheduleGroup,
 		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
 			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
@@ -99,7 +100,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("\"End\"")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
-		Enabled:       jsii.Bool(false),
 		ScheduleGroup: scheduleGroup,
 		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
 			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
