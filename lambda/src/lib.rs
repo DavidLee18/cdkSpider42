@@ -387,7 +387,6 @@ macro_rules! inject_id {
 #[macro_export]
 macro_rules! atomic_puts {
     ($items:ident, $db:ident, $name:literal, $no:literal) => {
-        if $name == "BSSH_NM" {
             let table_name = env::var("TABLE_NAME").map_err(|_| MyError::NoEnvVar("TABLE_NAME".to_string()))?;
             for ws in $items.into_iter().chunks(100).into_iter().map(|is| is.map( |i| { Put::builder()
                     .table_name(&table_name)
@@ -408,7 +407,6 @@ macro_rules! atomic_puts {
                     .await?;
             }
         }
-    }
 }
 
 #[macro_export]
