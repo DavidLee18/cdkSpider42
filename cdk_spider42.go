@@ -100,6 +100,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
+		Enabled:       jsii.Bool(false),
 		ScheduleGroup: scheduleGroup,
 		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
 			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
@@ -355,6 +356,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	}))
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
+			jsii.String("s3:GetObject"),
 			jsii.String("s3:PutObject"),
 		},
 		Effect: awsiam.Effect_ALLOW,
@@ -374,6 +376,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
+			jsii.String("s3:GetObject"),
 			jsii.String("s3:PutObject"),
 		},
 		Effect: awsiam.Effect_ALLOW,

@@ -1,6 +1,6 @@
 [package]
 name = "spider42"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
@@ -16,10 +16,10 @@ chrono = { version = "0.4.42", features = ["serde"] }
 itertools = "0.14.0"
 lambda_runtime = "1.0.1"
 minreq = { version = "2.14.1", features = ["json-using-serde", "https-rustls-probe"] }
-rust_xlsxwriter = { version = "0.92.2", features = ["serde", "chrono"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
 serde_json = "1.0.145"
 serde_path_to_error = "0.1.20"
 tokio = { version = "1", features = ["macros"] }
+umya-spreadsheet = "2.3.3"
 uuid = { version = "1.18.1", features = ["fast-rng", "v4", "v7", "serde"] }

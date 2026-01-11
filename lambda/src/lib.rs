@@ -1,4 +1,3 @@
-use rust_xlsxwriter::XlsxSerialize;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -40,34 +39,55 @@ impl std::fmt::Display for MyError {
 
 impl std::error::Error for MyError {}
 
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, XlsxSerialize)]
-#[xlsx(table_default)]
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Store {
     #[serde(rename = "LCNS_NO")]
-    #[xlsx(rename = "인허가번호")]
     pub license_num: String,
     #[serde(rename = "BSSH_NM")]
-    #[xlsx(rename = "업소명")]
     pub name: String,
     #[serde(rename = "ADDR")]
-    #[xlsx(rename = "주소")]
     pub address: String,
     #[serde(rename = "TELNO")]
-    #[xlsx(rename = "전화번호")]
     pub phone_number: String,
     #[serde(rename = "INDUTY_CD_NM")]
-    #[xlsx(rename = "업종")]
     pub category: String,
     #[serde(rename = "PRSDNT_NM")]
-    #[xlsx(rename = "대표자명")]
     pub owner_name: String,
     #[serde(rename = "PRMS_DT")]
-    #[xlsx(rename = "허가일자")]
     pub approval_date: String,
     #[serde(rename = "ID")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[xlsx(skip)]
     pub id: Option<Uuid>,
+}
+
+impl Store {
+    pub fn write_to_sheet(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+        start_col_row: (u32, u32),
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        let (c, r) = start_col_row;
+        sheet
+            .get_cell_value_mut((c, r))
+            .set_value(&self.license_num);
+        sheet.get_cell_value_mut((c + 1, r)).set_value(&self.name);
+        sheet
+            .get_cell_value_mut((c + 2, r))
+            .set_value(&self.address);
+        sheet
+            .get_cell_value_mut((c + 3, r))
+            .set_value(&self.phone_number);
+        sheet
+            .get_cell_value_mut((c + 4, r))
+            .set_value(&self.category);
+        sheet
+            .get_cell_value_mut((c + 5, r))
+            .set_value(&self.owner_name);
+        sheet
+            .get_cell_value_mut((c + 6, r))
+            .set_value(&self.approval_date);
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -158,39 +178,120 @@ pub struct StoreInfos {
     pub result: StoreInfoResult,
 }
 
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, XlsxSerialize)]
+impl StoreInfos {
+    pub fn set_headers(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        sheet.add_table(umya_spreadsheet::Table::new(
+            "인허가 업소 정보",
+            ((1, 1), (7, self.row.len() as u32 + 1)),
+        ));
+        sheet
+            .get_cell_value_mut((1, 1))
+            .set_value_string("인허가번호");
+        sheet.get_cell_value_mut((2, 1)).set_value_string("업소명");
+        sheet.get_cell_value_mut((3, 1)).set_value_string("주소");
+        sheet
+            .get_cell_value_mut((4, 1))
+            .set_value_string("전화번호");
+        sheet.get_cell_value_mut((5, 1)).set_value_string("업종");
+        sheet
+            .get_cell_value_mut((6, 1))
+            .set_value_string("대표자명");
+        sheet
+            .get_cell_value_mut((7, 1))
+            .set_value_string("허가일자");
+        Ok(())
+    }
+
+    pub fn put_to_sheet(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        let (start_col, start_row) = if sheet.get_tables().is_empty() {
+            self.set_headers(sheet)?;
+            (1, 2)
+        } else {
+            (1, *sheet.get_tables()[0].get_area().1.get_row_num() + 1)
+        };
+        for (i, row) in self.row.iter().enumerate() {
+            row.write_to_sheet(sheet, (start_col, start_row + i as u32))?;
+        }
+        let ((start_col, start_row), (end_col, end_row)) = (
+            (
+                *sheet.get_tables()[0].get_area().0.get_col_num(),
+                *sheet.get_tables()[0].get_area().0.get_row_num(),
+            ),
+            (
+                *sheet.get_tables()[0].get_area().1.get_col_num(),
+                *sheet.get_tables()[0].get_area().1.get_row_num(),
+            ),
+        );
+        sheet.get_tables_mut()[0].set_area((
+            (start_col, start_row),
+            (end_col, end_row + self.row.len() as u32),
+        ));
+        sheet.calculation_auto_width();
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoreUpdate {
     #[serde(rename = "LCNS_NO")]
-    #[xlsx(rename = "인허가번호")]
     pub license_num: String,
     #[serde(rename = "BSSH_NM")]
-    #[xlsx(rename = "업소명")]
     pub name: String,
     #[serde(rename = "SITE_ADDR")]
-    #[xlsx(rename = "주소")]
     pub address: String,
     #[serde(rename = "TELNO")]
-    #[xlsx(rename = "전화번호")]
     pub phone_number: String,
     #[serde(rename = "INDUTY_CD_NM")]
-    #[xlsx(rename = "업종명")]
     pub category: String,
     #[serde(rename = "CHNG_DT")]
-    #[xlsx(rename = "변경일자")]
     pub update_date: String,
     #[serde(rename = "CHNG_BF_CN")]
-    #[xlsx(rename = "변경전내용")]
     pub before: String,
     #[serde(rename = "CHNG_AF_CN")]
-    #[xlsx(rename = "변경후내용")]
     pub after: String,
     #[serde(rename = "CHNG_PRVNS")]
-    #[xlsx(rename = "변경사유")]
     pub update_reason: String,
     #[serde(rename = "ID")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[xlsx(skip)]
     pub id: Option<Uuid>,
+}
+
+impl StoreUpdate {
+    pub fn write_to_sheet(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+        start_col_row: (u32, u32),
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        let (c, r) = start_col_row;
+        sheet
+            .get_cell_value_mut((c, r))
+            .set_value(&self.license_num);
+        sheet.get_cell_value_mut((c + 1, r)).set_value(&self.name);
+        sheet
+            .get_cell_value_mut((c + 2, r))
+            .set_value(&self.address);
+        sheet
+            .get_cell_value_mut((c + 3, r))
+            .set_value(&self.phone_number);
+        sheet
+            .get_cell_value_mut((c + 4, r))
+            .set_value(&self.category);
+        sheet
+            .get_cell_value_mut((c + 5, r))
+            .set_value(&self.update_date);
+        sheet.get_cell_value_mut((c + 6, r)).set_value(&self.before);
+        sheet.get_cell_value_mut((c + 7, r)).set_value(&self.after);
+        sheet
+            .get_cell_value_mut((c + 8, r))
+            .set_value(&self.update_reason);
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -200,6 +301,71 @@ pub struct StoreUpdates {
     pub row: Vec<StoreUpdate>,
     #[serde(rename = "RESULT")]
     pub result: StoreInfoResult,
+}
+
+impl StoreUpdates {
+    pub fn set_headers(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        sheet.add_table(umya_spreadsheet::Table::new(
+            "인허가 업소 정보",
+            ((1, 1), (7, self.row.len() as u32 + 1)),
+        ));
+        sheet
+            .get_cell_value_mut((1, 1))
+            .set_value_string("인허가번호");
+        sheet.get_cell_value_mut((2, 1)).set_value_string("업소명");
+        sheet.get_cell_value_mut((3, 1)).set_value_string("주소");
+        sheet
+            .get_cell_value_mut((4, 1))
+            .set_value_string("전화번호");
+        sheet.get_cell_value_mut((5, 1)).set_value_string("업종명");
+        sheet
+            .get_cell_value_mut((6, 1))
+            .set_value_string("변경일자");
+        sheet
+            .get_cell_value_mut((7, 1))
+            .set_value_string("변경전내용");
+        sheet
+            .get_cell_value_mut((8, 1))
+            .set_value_string("변경후내용");
+        sheet
+            .get_cell_value_mut((9, 1))
+            .set_value_string("변경사유");
+        Ok(())
+    }
+
+    pub fn put_to_sheet(
+        &self,
+        sheet: &mut umya_spreadsheet::Worksheet,
+    ) -> Result<(), umya_spreadsheet::XlsxError> {
+        let (start_col, start_row) = if sheet.get_tables().is_empty() {
+            self.set_headers(sheet)?;
+            (1, 2)
+        } else {
+            (1, *sheet.get_tables()[0].get_area().1.get_row_num() + 1)
+        };
+        for (i, row) in self.row.iter().enumerate() {
+            row.write_to_sheet(sheet, (start_col, start_row + i as u32))?;
+        }
+        let ((start_col, start_row), (end_col, end_row)) = (
+            (
+                *sheet.get_tables()[0].get_area().0.get_col_num(),
+                *sheet.get_tables()[0].get_area().0.get_row_num(),
+            ),
+            (
+                *sheet.get_tables()[0].get_area().1.get_col_num(),
+                *sheet.get_tables()[0].get_area().1.get_row_num(),
+            ),
+        );
+        sheet.get_tables_mut()[0].set_area((
+            (start_col, start_row),
+            (end_col, end_row + self.row.len() as u32),
+        ));
+        sheet.calculation_auto_width();
+        Ok(())
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -222,6 +388,9 @@ pub struct Limit {
     #[serde(default, rename = "LAST_IDX", skip_serializing_if = "Option::is_none")]
     pub last_idx: Option<(u32, u32)>,
 }
+
+pub const LIMIT_TABLE_NAME: &'static str = "TABLE_NAME";
+pub const LIMIT_ID: &'static str = "ID";
 
 pub async fn get_secret(
     secretsm: &aws_sdk_secretsmanager::Client,
@@ -411,7 +580,7 @@ macro_rules! atomic_puts {
 
 #[macro_export]
 macro_rules! handle {
-    ($name: ident, $t:ty, $ts:ty, $date:ident, $pk:literal, $limfield:literal, $file_name:literal) => {
+    ($name: ident, $ts:ty, $date:ident, $pk:literal, $limfield:literal, $file_name:literal) => {
         async fn $name(
             event: lambda_runtime::LambdaEvent<serde_json::Value>,
             sqs: &aws_sdk_sqs::Client,
@@ -481,7 +650,7 @@ macro_rules! handle {
                                                                     .ok(),
                                                                 )
                                                                 .condition_expression(
-                                                                    "attribute_not_exists(id)",
+                                                                    format!("attribute_not_exists({})", ::spider42::LIMIT_ID),
                                                                 )
                                                                 .build()
                                                         })??,
@@ -490,6 +659,15 @@ macro_rules! handle {
                                             )
                                             .send()
                                             .await?;
+
+                                        let mut xl = umya_spreadsheet::new_file();
+                                        let sheet = xl.new_sheet($file_name.split('.')
+                                            .rev().skip(1).collect::<String>().chars().rev().collect::<String>())?;
+                                        if sinfo.row.len() > 0 {
+                                            sinfo.put_to_sheet(sheet)?;
+                                        }
+                                        umya_spreadsheet::writer::xlsx::write(&xl,
+                                        std::path::Path::new(&format!("/tmp/{}", $file_name)))?;
 
                                         let mut items = sinfo
                                             .row
@@ -519,6 +697,19 @@ macro_rules! handle {
                                             Payload::Between(from + width, until + width),
                                         )
                                         .await?;
+
+
+                                        let _ = s3
+                                        .put_object()
+                                        .bucket(&xl_bucket)
+                                        .key($file_name)
+                                        .content_type(
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        )
+                                        .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                        .send()
+                                        .await?;
+                                        tracing::info!("Start({}, {}): Saved to S3", from, until);
 
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {
@@ -558,7 +749,33 @@ macro_rules! handle {
                                         let raw = serde_json::to_string(&res[&api_action].take())?;
                                         let de = &mut serde_json::Deserializer::from_str(&raw);
                                         let sinfo: $ts = serde_path_to_error::deserialize(de)?;
+                                        let mut write = false;
                                         ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
+
+                                        if sinfo.row.len() > 0 {
+                                            write = true;
+                                            let file_res = s3
+                                                .get_object()
+                                                .bucket(&xl_bucket)
+                                                .key($file_name)
+                                                .send()
+                                                .await?;
+                                            let file_content = file_res.body.collect().await?.into_bytes();
+                                            let cursor = std::io::Cursor::new(file_content);
+
+                                            let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
+                                            let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
+                                                s
+                                            } else {
+                                                xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
+                                                        .chars().rev().collect::<String>())?
+                                            };
+                                            sinfo.put_to_sheet(sheet)?;
+                                            umya_spreadsheet::writer::xlsx::write(
+                                                &xl,
+                                                std::path::Path::new(&format!("/tmp/{}", $file_name)),
+                                            )?;
+                                        }
 
                                         let mut items = sinfo
                                             .row
@@ -588,6 +805,20 @@ macro_rules! handle {
                                         )
                                         .await?;
 
+                                        if write {
+                                            let _ = s3
+                                                .put_object()
+                                                .bucket(&xl_bucket)
+                                                .key($file_name)
+                                                .content_type(
+                                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                )
+                                                .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                                .send()
+                                                .await?;
+                                            tracing::info!("Between({}, {}): Saved to S3", from, until);
+                                        }
+
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {
                                         tracing::error!(
@@ -609,108 +840,29 @@ macro_rules! handle {
                             }
                         }
                         Payload::End => {
-                            tracing::info!("end of the payload, table names are: {:?}, {:?}", limit_table, table_name);
-                            let res = db
-                                .query()
-                                .table_name(&limit_table)
-                                .key_condition_expression("TABLE_NAME = :table_name")
-                                .expression_attribute_values(
-                                    ":table_name",
-                                    aws_sdk_dynamodb::types::AttributeValue::S(table_name.clone()),
-                                )
-                                .scan_index_forward(false)
-                                .consistent_read(true)
-                                .limit(1)
-                                .send()
-                                .await?;
-
-                            tracing::info!("{:?}", res);
-
-                            if res.count < 1 {
-                                return Err(Box::new(MyError::NoLimit));
-                            }
-
-                            let limit: Limit = serde_dynamo::from_item(
-                                res.items
-                                    .ok_or(Box::new(MyError::NoLimit))?
-                                    .pop()
-                                    .ok_or(Box::new(MyError::NoLimit))?,
-                            )?;
-
-                            let mut infos: Vec<$t>;
-
-                            let mut recs = db
-                                .query()
-                                .table_name(&limit.table_name)
-                                .key_condition_expression(format!(
-                                    "{} = :val and ID >= :id",
-                                    limit.field_name
-                                ))
-                                .expression_attribute_values(
-                                    ":val",
-                                    aws_sdk_dynamodb::types::AttributeValue::S(limit.value.clone()),
-                                )
-                                .expression_attribute_values(
-                                    ":id",
-                                    aws_sdk_dynamodb::types::AttributeValue::S(limit.id.to_string()),
-                                )
-                                .consistent_read(true)
-                                .send()
-                                .await?;
-
-                            infos = serde_dynamo::from_items(recs.items.ok_or(MyError::StoreInfosEmpty)?)?;
-
-                            while let Some(next) = recs.last_evaluated_key {
-                                recs = db
-                                    .query()
-                                    .table_name(&limit.table_name)
-                                    .key_condition_expression(format!(
-                                        "{} = :val and ID >= :id",
-                                        limit.field_name
-                                    ))
-                                    .expression_attribute_values(
-                                        ":val",
-                                        aws_sdk_dynamodb::types::AttributeValue::S(limit.value.clone()),
-                                    )
-                                    .expression_attribute_values(
-                                        ":id",
-                                        aws_sdk_dynamodb::types::AttributeValue::S(limit.id.to_string()),
-                                    )
-                                    .set_exclusive_start_key(Some(next))
-                                    .consistent_read(true)
-                                    .send()
-                                    .await?;
-
-                                infos.extend(serde_dynamo::from_items(
-                                    recs.items.ok_or(MyError::StoreInfosEmpty)?,
-                                )?);
-                            }
-
-                            let mut xl = rust_xlsxwriter::Workbook::new();
-                            let wsheet = xl.add_worksheet().autofit();
-                            wsheet.set_serialize_headers::<$t>(0, 0)?;
-                            wsheet.serialize(&infos)?;
-                            xl.save(format!("/tmp/{}", $file_name))?;
-
-                            let res = s3
-                                .put_object()
+                            let file_res = s3
+                                .get_object()
                                 .bucket(&xl_bucket)
                                 .key($file_name)
-                                .content_type(
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                )
-                                .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
                                 .send()
                                 .await?;
-                            tracing::info!("Uploaded to S3: {:?}", res);
-                            delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
-                            sns
+                            let file_content = file_res.body.collect().await?.into_bytes();
+                            let cursor = std::io::Cursor::new(file_content);
+                            let content = std::io::read_to_string(cursor)?;
+                            if content.is_empty() {
+                                tracing::warn!("No actual data fetched; finishing the job anyway...");
+                                delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                            } else {
+                                tracing::info!("Successfully completed :D");
+                                delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                sns
                                 .publish()
                                 .topic_arn(&sns_arn)
                                 .subject(env::var("EMAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("EMAIL_SUBJECT".to_string()))?)
                                 .message(env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?)
                                 .send()
                                 .await?;
+                            }
                         }
                     }
                 }
@@ -743,7 +895,7 @@ macro_rules! handle {
                         let rec = db
                             .query()
                             .table_name(limit_table)
-                            .key_condition_expression("TABLE_NAME = :table_name")
+                            .key_condition_expression(format!("{} = :table_name", ::spider42::LIMIT_TABLE_NAME))
                             .expression_attribute_values(
                                 ":table_name",
                                 aws_sdk_dynamodb::types::AttributeValue::S(table_name),
