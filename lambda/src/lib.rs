@@ -467,8 +467,8 @@ pub async fn retry_tomorrow(
             aws_sdk_eventbridge::types::Target::builder()
                 .id(format!("{}_target", rule_name))
                 .arn(
-                    std::env::var("LAMBDA_ARN")
-                        .map_err(|_| MyError::NoEnvVar("LAMBDA_ARN".to_string()))?,
+                    std::env::var("QUEUE_ARN")
+                        .map_err(|_| MyError::NoEnvVar("QUEUE_ARN".to_string()))?,
                 )
                 .input(serde_json::to_string(&payload)?)
                 .build()?,

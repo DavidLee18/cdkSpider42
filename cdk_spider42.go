@@ -76,7 +76,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// create EventBridge scheduler
 	when := time.Now().UTC()
-	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) || true {
+	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) {
 		when = time.Date(when.Year(), when.Month(), when.Day()+1, 10, 30, 0, 0, time.UTC)
 	} else {
 		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
@@ -221,12 +221,13 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_FETCH_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_STORE_MESSAGE") + *dist.DomainName() + "/stores.xlsx"),
+			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_STORE_SUBJECT")),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
+			"QUEUE_ARN":        storeQueue.QueueArn(),
 			"QUEUE_URL":        storeQueue.QueueUrl(),
 			"TABLE_NAME":       storesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
-			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_STORE_SUBJECT")),
-			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_STORE_MESSAGE") + *dist.DomainName() + "/stores.xlsx"),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(storeQueue, &awslambdaeventsources.SqsEventSourceProps{
@@ -256,12 +257,13 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_UPDATE_MESSAGE") + *dist.DomainName() + "/updates.xlsx"),
+			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_UPDATE_SUBJECT")),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
+			"QUEUE_ARN":        updateQueue.QueueArn(),
 			"QUEUE_URL":        updateQueue.QueueUrl(),
 			"TABLE_NAME":       storesUpdatesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
-			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_UPDATE_SUBJECT")),
-			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_UPDATE_MESSAGE") + *dist.DomainName() + "/updates.xlsx"),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(updateQueue, &awslambdaeventsources.SqsEventSourceProps{
@@ -284,9 +286,6 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Timeout:         awscdk.Duration_Seconds(jsii.Number(90)),
 		Tracing:         awslambda.Tracing_ACTIVE,
 	})
-
-	lambdaFetchStores.AddEnvironment(jsii.String("LAMBDA_ARN"), jsii.Sprintf("arn:aws:lambda:%s:%s:function:Spider42FetchStores", os.Getenv("CDK_DEFAULT_REGION"), os.Getenv("CDK_DEFAULT_ACCOUNT")), nil)
-	lambdaFetchUpdates.AddEnvironment(jsii.String("LAMBDA_ARN"), jsii.Sprintf("arn:aws:lambda:%s:%s:function:Spider42FetchUpdates", os.Getenv("CDK_DEFAULT_REGION"), os.Getenv("CDK_DEFAULT_ACCOUNT")), nil)
 
 	lambdaFetchStores.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
