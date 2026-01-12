@@ -501,12 +501,8 @@ macro_rules! match_result_code {
             StoreInfoResultCode::Info200 | StoreInfoResultCode::Error332 => {
                 let width = $until - $from;
                 if width > 1 {
-                    send_queue(
-                        &$sqs,
-                        &$queue,
-                        Payload::Between($from, $until + (width / 2)),
-                    )
-                    .await?;
+                    send_queue(&$sqs, &$queue, Payload::Between($from, $from + (width / 2)))
+                        .await?;
                 } else {
                     tracing::warn!("cannot fetch more; terminating...");
                     retry_tomorrow($ev, Payload::Start($from, $from + 1000)).await?;
