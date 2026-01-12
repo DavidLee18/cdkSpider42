@@ -14,6 +14,7 @@ pub enum MyError {
     StoreInfosEmpty,
     NoLimit,
     NoEnvVar(String),
+    TimeoutsInRow(u32),
 }
 
 impl std::fmt::Display for MyError {
@@ -33,6 +34,7 @@ impl std::fmt::Display for MyError {
             MyError::StoreInfosEmpty => write!(f, "No store infos found"),
             MyError::NoLimit => write!(f, "No limit found"),
             MyError::NoEnvVar(var) => write!(f, "No environment variable found: {}", var),
+            MyError::TimeoutsInRow(n) => write!(f, "{} Timeouts in row", n),
         }
     }
 }
@@ -373,6 +375,7 @@ pub enum Payload {
     Start(u32, u32),
     Between(u32, u32),
     End,
+    TimeoutRetry((u32, u32), u32),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
@@ -713,14 +716,18 @@ macro_rules! handle {
                                             "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
                                             txt
                                         );
-                                        send_queue(&sqs, &queue, Payload::Start(from, until)).await?;
+                                        if txt.contains("접속 중") { // delay and retry
+                                            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                        }
+                                        // send_queue(&sqs, &queue, Payload::Start(from, until)).await?;
                                     }
                                 }
                                 Err(minreq::Error::IoError(e))
                                     if e.kind() == std::io::ErrorKind::TimedOut =>
                                 {
-                                    tracing::warn!("API request timed out; re-queueing..");
-                                    send_queue(&sqs, &queue, Payload::Start(from, until)).await?;
+                                    tracing::warn!("API request timed out; will retry..");
+                                    delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                    send_queue(&sqs, &queue, Payload::TimeoutRetry((from, until), 1)).await?;
                                 }
                                 Err(e) => {
                                     tracing::error!("Error sending API request: {:?}", e);
@@ -821,14 +828,18 @@ macro_rules! handle {
                                             "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
                                             txt
                                         );
-                                        send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
+                                        if txt.contains("접속 중") { // delay and retry
+                                            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                        }
+                                        // send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
                                     }
                                 }
                                 Err(minreq::Error::IoError(e))
                                     if e.kind() == std::io::ErrorKind::TimedOut =>
                                 {
-                                    tracing::warn!("API request timed out; re-queueing..");
-                                    send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
+                                    tracing::warn!("API request timed out; will retry..");
+                                    delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                    send_queue(&sqs, &queue, Payload::TimeoutRetry((from, until), 1)).await?;
                                 }
                                 Err(e) => {
                                     tracing::error!("Error sending API request: {:?}", e);
@@ -858,6 +869,123 @@ macro_rules! handle {
                                 .message(env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?)
                                 .send()
                                 .await?;
+                            }
+                        }
+                        Payload::TimeoutRetry((from, until), nth) => {
+                            if nth >= 5 {
+                                tracing::error!("{} timeouts in row; aborting", nth);
+                                delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                return Err(Box::new(MyError::TimeoutsInRow(nth)));
+                            }
+                            let url = format!(
+                                "http://openapi.foodsafetykorea.go.kr/api/{}/{}/json/{}/{}",
+                                scrt,
+                                api_action,
+                                from,
+                                until
+                            );
+                            tracing::info!("sending request to: {}", url);
+                            match minreq::get(&url).with_timeout(40).send() {
+                                Ok(res) => {
+                                    let txt = res.as_str()?;
+                                    tracing::info!("raw response: {}", txt);
+                                    if !txt.contains("alert(") && !txt.contains("<script") {
+                                        let mut res: serde_json::Value = serde_json::from_str(txt)?;
+                                        let raw = serde_json::to_string(&res[&api_action].take())?;
+                                        let de = &mut serde_json::Deserializer::from_str(&raw);
+                                        let sinfo: $ts = serde_path_to_error::deserialize(de)?;
+                                        let mut write = false;
+                                        ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
+
+                                        if sinfo.row.len() > 0 {
+                                            write = true;
+                                            let file_res = s3
+                                                .get_object()
+                                                .bucket(&xl_bucket)
+                                                .key($file_name)
+                                                .send()
+                                                .await?;
+                                            let file_content = file_res.body.collect().await?.into_bytes();
+                                            let cursor = std::io::Cursor::new(file_content);
+
+                                            let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
+                                            let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
+                                                s
+                                            } else {
+                                                xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
+                                                        .chars().rev().collect::<String>())?
+                                            };
+                                            sinfo.put_to_sheet(sheet)?;
+                                            umya_spreadsheet::writer::xlsx::write(
+                                                &xl,
+                                                std::path::Path::new(&format!("/tmp/{}", $file_name)),
+                                            )?;
+                                        }
+
+                                        let mut items = sinfo
+                                            .row
+                                            .into_iter()
+                                            .filter(|i| {
+                                                if i.$date.is_empty() {
+                                                    tracing::warn!(
+                                                        "Approval date is empty for store {:?}",
+                                                        i
+                                                    );
+                                                    false
+                                                } else {
+                                                    true
+                                                }
+                                            })
+                                            .map(|i| serde_dynamo::to_item(i))
+                                            .collect::<Result<Vec<_>, _>>()?;
+                                        ::spider42::inject_id!(items);
+                                        ::spider42::atomic_puts!(items, db, $pk, "LCNS_NO");
+
+                                        let width = until - from;
+
+                                        send_queue(
+                                            &sqs,
+                                            &queue,
+                                            Payload::Between(from + width, until + width),
+                                        )
+                                        .await?;
+
+                                        if write {
+                                            let _ = s3
+                                                .put_object()
+                                                .bucket(&xl_bucket)
+                                                .key($file_name)
+                                                .content_type(
+                                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                )
+                                                .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                                .send()
+                                                .await?;
+                                            tracing::info!("Between({}, {}): Saved to S3", from, until);
+                                        }
+
+                                        delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                    } else {
+                                        tracing::error!(
+                                            "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
+                                            txt
+                                        );
+                                        if txt.contains("접속 중") { // delay and retry
+                                            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                        }
+                                        // send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
+                                    }
+                                }
+                                Err(minreq::Error::IoError(e))
+                                    if e.kind() == std::io::ErrorKind::TimedOut =>
+                                {
+                                    tracing::warn!("API request timed out; will retry..");
+                                    delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                                    send_queue(&sqs, &queue, Payload::TimeoutRetry((from, until), nth + 1)).await?;
+                                }
+                                Err(e) => {
+                                    tracing::error!("Error sending API request: {:?}", e);
+                                }
                             }
                         }
                     }

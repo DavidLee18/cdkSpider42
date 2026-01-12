@@ -20,6 +20,6 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
 serde_json = "1.0.145"
 serde_path_to_error = "0.1.20"
-tokio = { version = "1", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "time"] }
 umya-spreadsheet = "2.3.3"
 uuid = { version = "1.18.1", features = ["fast-rng", "v4", "v7", "serde"] }
