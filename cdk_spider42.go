@@ -380,7 +380,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		},
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
-			spider42Bucket.BucketArn(),
+			jsii.String("arn:aws:s3:::*"),
 		},
 	}))
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
