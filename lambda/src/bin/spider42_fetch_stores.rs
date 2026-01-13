@@ -6,7 +6,7 @@ use aws_sdk_sqs::types::QueueAttributeName;
 use itertools::Itertools;
 use lambda_runtime::{Error, run, service_fn, tracing};
 use spider42::{
-    Limit, MyError, Payload, StoreInfoResultCode, StoreInfos, delete_from_queue, get_secret,
+    Limit, MyError, Payload, Store, StoreInfoResultCode, StoreInfos, delete_from_queue, get_secret,
     retry_tomorrow, send_queue,
 };
 use std::{collections::HashMap, env};
@@ -32,6 +32,7 @@ async fn main() -> Result<(), Error> {
 spider42::handle!(
     spider42_fetch_stores,
     StoreInfos,
+    Store,
     approval_date,
     "BSSH_NM",
     "PRMS_DT",

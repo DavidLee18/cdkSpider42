@@ -6,8 +6,8 @@ use aws_sdk_sqs::types::QueueAttributeName;
 use itertools::Itertools;
 use lambda_runtime::{Error, run, service_fn, tracing};
 use spider42::{
-    Limit, MyError, Payload, StoreInfoResultCode, StoreUpdates, delete_from_queue, get_secret,
-    retry_tomorrow, send_queue,
+    Limit, MyError, Payload, StoreInfoResultCode, StoreUpdate, StoreUpdates, delete_from_queue,
+    get_secret, retry_tomorrow, send_queue,
 };
 use std::{collections::HashMap, env};
 use uuid::Uuid;
@@ -32,6 +32,7 @@ async fn main() -> Result<(), Error> {
 spider42::handle!(
     spider42_fetch_updates,
     StoreUpdates,
+    StoreUpdate,
     update_date,
     "CHNG_DT",
     "CHNG_DT",

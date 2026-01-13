@@ -92,8 +92,9 @@ impl Store {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub enum StoreInfoResultCode {
+    #[default]
     Info000,
     Info100,
     Info200,
@@ -163,7 +164,7 @@ impl<'de> serde::Deserialize<'de> for StoreInfoResultCode {
     }
 }
 
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct StoreInfoResult {
     #[serde(rename = "MSG")]
     pub msg: String,
@@ -171,7 +172,7 @@ pub struct StoreInfoResult {
     pub code: StoreInfoResultCode,
 }
 
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct StoreInfos {
     pub total_count: String,
     #[serde(default)]
@@ -296,7 +297,7 @@ impl StoreUpdate {
     }
 }
 
-#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct StoreUpdates {
     pub total_count: String,
     #[serde(default)]
@@ -560,7 +561,7 @@ macro_rules! atomic_puts {
                     .table_name(&table_name)
                     .set_item(Some(i))
                     .condition_expression(
-                        format!("attribute_not_exists(ID) AND (attribute_not_exists({}) AND attribute_not_exists({}))", $name, $no),
+                        format!("attribute_not_exists(ID) AND (attribute_not_exists({}) OR attribute_not_exists({}))", $name, $no),
                     )
                     .build()
             }).collect::<Result<Vec<_>, _>>()).collect::<Result<Vec<_>, _>>()? {
@@ -579,7 +580,7 @@ macro_rules! atomic_puts {
 
 #[macro_export]
 macro_rules! handle {
-    ($name: ident, $ts:ty, $date:ident, $pk:literal, $limfield:literal, $file_name:literal) => {
+    ($name: ident, $ts:ty, $t:ty, $date:ident, $pk:literal, $limfield:literal, $file_name:literal) => {
         async fn $name(
             event: lambda_runtime::LambdaEvent<serde_json::Value>,
             sqs: &aws_sdk_sqs::Client,
@@ -659,14 +660,14 @@ macro_rules! handle {
                                             .send()
                                             .await?;
 
-                                        let mut xl = umya_spreadsheet::new_file();
-                                        let sheet = xl.new_sheet($file_name.split('.')
-                                            .rev().skip(1).collect::<String>().chars().rev().collect::<String>())?;
-                                        if sinfo.row.len() > 0 {
-                                            sinfo.put_to_sheet(sheet)?;
-                                        }
-                                        umya_spreadsheet::writer::xlsx::write(&xl,
-                                        std::path::Path::new(&format!("/tmp/{}", $file_name)))?;
+                                        // let mut xl = umya_spreadsheet::new_file();
+                                        // let sheet = xl.new_sheet($file_name.split('.')
+                                        //     .rev().skip(1).collect::<String>().chars().rev().collect::<String>())?;
+                                        // if sinfo.row.len() > 0 {
+                                        //     sinfo.put_to_sheet(sheet)?;
+                                        // }
+                                        // umya_spreadsheet::writer::xlsx::write(&xl,
+                                        // std::path::Path::new(&format!("/tmp/{}", $file_name)))?;
 
                                         let mut items = sinfo
                                             .row
@@ -698,17 +699,17 @@ macro_rules! handle {
                                         .await?;
 
 
-                                        let _ = s3
-                                        .put_object()
-                                        .bucket(&xl_bucket)
-                                        .key($file_name)
-                                        .content_type(
-                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        )
-                                        .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
-                                        .send()
-                                        .await?;
-                                        tracing::info!("Start({}, {}): Saved to S3", from, until);
+                                        // let _ = s3
+                                        // .put_object()
+                                        // .bucket(&xl_bucket)
+                                        // .key($file_name)
+                                        // .content_type(
+                                        //     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        // )
+                                        // .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                        // .send()
+                                        // .await?;
+                                        // tracing::info!("Start({}, {}): Saved to S3", from, until);
 
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {
@@ -755,30 +756,30 @@ macro_rules! handle {
                                         let mut write = false;
                                         ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
 
-                                        if sinfo.row.len() > 0 {
-                                            write = true;
-                                            let file_res = s3
-                                                .get_object()
-                                                .bucket(&xl_bucket)
-                                                .key($file_name)
-                                                .send()
-                                                .await?;
-                                            let file_content = file_res.body.collect().await?.into_bytes();
-                                            let cursor = std::io::Cursor::new(file_content);
+                                        // if sinfo.row.len() > 0 {
+                                        //     write = true;
+                                        //     let file_res = s3
+                                        //         .get_object()
+                                        //         .bucket(&xl_bucket)
+                                        //         .key($file_name)
+                                        //         .send()
+                                        //         .await?;
+                                        //     let file_content = file_res.body.collect().await?.into_bytes();
+                                        //     let cursor = std::io::Cursor::new(file_content);
 
-                                            let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
-                                            let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
-                                                s
-                                            } else {
-                                                xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
-                                                        .chars().rev().collect::<String>())?
-                                            };
-                                            sinfo.put_to_sheet(sheet)?;
-                                            umya_spreadsheet::writer::xlsx::write(
-                                                &xl,
-                                                std::path::Path::new(&format!("/tmp/{}", $file_name)),
-                                            )?;
-                                        }
+                                        //     let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
+                                        //     let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
+                                        //         s
+                                        //     } else {
+                                        //         xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
+                                        //                 .chars().rev().collect::<String>())?
+                                        //     };
+                                        //     sinfo.put_to_sheet(sheet)?;
+                                        //     umya_spreadsheet::writer::xlsx::write(
+                                        //         &xl,
+                                        //         std::path::Path::new(&format!("/tmp/{}", $file_name)),
+                                        //     )?;
+                                        // }
 
                                         let mut items = sinfo
                                             .row
@@ -808,19 +809,19 @@ macro_rules! handle {
                                         )
                                         .await?;
 
-                                        if write {
-                                            let _ = s3
-                                                .put_object()
-                                                .bucket(&xl_bucket)
-                                                .key($file_name)
-                                                .content_type(
-                                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                                )
-                                                .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
-                                                .send()
-                                                .await?;
-                                            tracing::info!("Between({}, {}): Saved to S3", from, until);
-                                        }
+                                        // if write {
+                                        //     let _ = s3
+                                        //         .put_object()
+                                        //         .bucket(&xl_bucket)
+                                        //         .key($file_name)
+                                        //         .content_type(
+                                        //             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        //         )
+                                        //         .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                        //         .send()
+                                        //         .await?;
+                                        //     tracing::info!("Between({}, {}): Saved to S3", from, until);
+                                        // }
 
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {
@@ -847,29 +848,109 @@ macro_rules! handle {
                             }
                         }
                         Payload::End => {
-                            let file_res = s3
-                                .get_object()
+                            let today = format!("{}", chrono::Utc::now().format("%Y%m%d"));
+                            let mut todays_res = db.query()
+                                .table_name(&table_name)
+                                .consistent_read(true)
+                                .key_condition_expression(format!("{} = :date", $pk))
+                                .expression_attribute_values(":date",
+                                    aws_sdk_dynamodb::types::AttributeValue::S(today.clone()))
+                                .send().await?;
+                            let mut infos: Vec<$t> = serde_dynamo::from_items(todays_res.items().to_vec())?;
+                            while let Some(k) = todays_res.last_evaluated_key.clone() {
+                                todays_res = db.query()
+                                    .table_name(&table_name)
+                                    .consistent_read(true)
+                                    .key_condition_expression(format!("{} = :date", $pk))
+                                    .expression_attribute_values(":date",
+                                        aws_sdk_dynamodb::types::AttributeValue::S(today.clone()))
+                                    .set_exclusive_start_key(Some(k))
+                                    .send().await?;
+                                infos.extend(serde_dynamo::from_items(todays_res.items().to_vec())?);
+                            }
+                            let mut xl = umya_spreadsheet::new_file();
+                            let sheet = xl.get_active_sheet_mut();
+                            sheet.set_name($file_name.split('.').rev().skip(1).collect::<String>());
+                            let mut sinfo = <$ts as Default>::default();
+                            if infos.len() > 0 {
+                                sinfo.row = infos;
+                                sinfo.put_to_sheet(sheet)?;
+                            }
+                            let file_name = format!("{}_{}.xlsx", $file_name, today);
+                            umya_spreadsheet::writer::xlsx::write(&xl,
+                                std::path::Path::new(&format!("/tmp/{}", file_name)))?;
+                            let _ = s3
+                                .put_object()
                                 .bucket(&xl_bucket)
-                                .key($file_name)
+                                .key(&file_name)
+                                .content_type(
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                )
+                                .body(std::fs::read(format!("/tmp/{}", file_name))?.into())
                                 .send()
                                 .await?;
-                            let file_content = file_res.body.collect().await?.into_bytes();
-                            let cursor = std::io::Cursor::new(file_content);
-                            let content = std::io::read_to_string(cursor)?;
-                            if content.is_empty() {
-                                tracing::warn!("No actual data fetched; finishing the job anyway...");
-                                delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
-                            } else {
-                                tracing::info!("Successfully completed :D");
-                                delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
-                                sns
+                            tracing::info!("{} items successfully written to S3", sinfo.row.len());
+                            delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                            sns
                                 .publish()
                                 .topic_arn(&sns_arn)
                                 .subject(env::var("EMAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("EMAIL_SUBJECT".to_string()))?)
-                                .message(env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?)
+                                .message(format!("{}{}", env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?, file_name))
                                 .send()
                                 .await?;
-                            }
+                            // let file_res = s3
+                            //     .get_object()
+                            //     .bucket(&xl_bucket)
+                            //     .key($file_name)
+                            //     .if_modified_since(<aws_sdk_dynamodb::primitives::DateTime
+                            //         as aws_smithy_types_convert::date_time::DateTimeExt>
+                            //         ::from_chrono_utc(chrono::Utc::now() - chrono::TimeDelta::hours(1)))
+                            //     .send()
+                            //     .await;
+                            // match file_res { Err(e) => {
+                            //     if format!("{:?}", e).contains("status: StatusCode(304),") {
+                            //         tracing::warn!("not modified; aborting...");
+                            //         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                            //         sns
+                            //         .publish()
+                            //         .topic_arn(&sns_arn)
+                            //         .subject(env::var("FAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("FAIL_SUBJECT".to_string()))?)
+                            //         .message(env::var("FAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("FAIL_MESSAGE".to_string()))?)
+                            //         .send()
+                            //         .await?;
+                            //         return Ok(());
+                            //     } else {
+                            //         return Err(Box::new(e));
+                            //     }
+                            // }
+                            // Ok(file_res) => {
+                            // let file_content = file_res.body.collect().await?.into_bytes();
+                            // let mut cursor = std::io::Cursor::new(file_content);
+                            // let mut content = vec![];
+                            // <std::io::Cursor<bytes::Bytes> as std::io::Read>::read_to_end(&mut cursor, &mut content)?;
+                            // if content.is_empty() {
+                            //     tracing::warn!("No actual data fetched; finishing the job anyway...");
+                            //     delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                            //     sns
+                            //     .publish()
+                            //     .topic_arn(&sns_arn)
+                            //     .subject(env::var("FAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("FAIL_SUBJECT".to_string()))?)
+                            //     .message(env::var("FAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("FAIL_MESSAGE".to_string()))?)
+                            //     .send()
+                            //     .await?;
+                            // } else {
+                            //     tracing::info!("Successfully completed :D");
+                            //     delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
+                            //     sns
+                            //     .publish()
+                            //     .topic_arn(&sns_arn)
+                            //     .subject(env::var("EMAIL_SUBJECT").map_err(|_| MyError::NoEnvVar("EMAIL_SUBJECT".to_string()))?)
+                            //     .message(env::var("EMAIL_MESSAGE").map_err(|_| MyError::NoEnvVar("EMAIL_MESSAGE".to_string()))?)
+                            //     .send()
+                            //     .await?;
+                            //         }
+                            //     }
+                            // }
                         }
                         Payload::TimeoutRetry((from, until), nth) => {
                             if nth >= 5 {
@@ -897,30 +978,30 @@ macro_rules! handle {
                                         let mut write = false;
                                         ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
 
-                                        if sinfo.row.len() > 0 {
-                                            write = true;
-                                            let file_res = s3
-                                                .get_object()
-                                                .bucket(&xl_bucket)
-                                                .key($file_name)
-                                                .send()
-                                                .await?;
-                                            let file_content = file_res.body.collect().await?.into_bytes();
-                                            let cursor = std::io::Cursor::new(file_content);
+                                        // if sinfo.row.len() > 0 {
+                                        //     write = true;
+                                        //     let file_res = s3
+                                        //         .get_object()
+                                        //         .bucket(&xl_bucket)
+                                        //         .key($file_name)
+                                        //         .send()
+                                        //         .await?;
+                                        //     let file_content = file_res.body.collect().await?.into_bytes();
+                                        //     let cursor = std::io::Cursor::new(file_content);
 
-                                            let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
-                                            let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
-                                                s
-                                            } else {
-                                                xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
-                                                        .chars().rev().collect::<String>())?
-                                            };
-                                            sinfo.put_to_sheet(sheet)?;
-                                            umya_spreadsheet::writer::xlsx::write(
-                                                &xl,
-                                                std::path::Path::new(&format!("/tmp/{}", $file_name)),
-                                            )?;
-                                        }
+                                        //     let mut xl = umya_spreadsheet::reader::xlsx::read_reader(cursor, true)?;
+                                        //     let sheet = if let Some(s) = xl.get_sheet_mut(&0) {
+                                        //         s
+                                        //     } else {
+                                        //         xl.new_sheet($file_name.split('.').rev().skip(1).collect::<String>()
+                                        //                 .chars().rev().collect::<String>())?
+                                        //     };
+                                        //     sinfo.put_to_sheet(sheet)?;
+                                        //     umya_spreadsheet::writer::xlsx::write(
+                                        //         &xl,
+                                        //         std::path::Path::new(&format!("/tmp/{}", $file_name)),
+                                        //     )?;
+                                        // }
 
                                         let mut items = sinfo
                                             .row
@@ -950,19 +1031,19 @@ macro_rules! handle {
                                         )
                                         .await?;
 
-                                        if write {
-                                            let _ = s3
-                                                .put_object()
-                                                .bucket(&xl_bucket)
-                                                .key($file_name)
-                                                .content_type(
-                                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                                )
-                                                .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
-                                                .send()
-                                                .await?;
-                                            tracing::info!("Between({}, {}): Saved to S3", from, until);
-                                        }
+                                        // if write {
+                                        //     let _ = s3
+                                        //         .put_object()
+                                        //         .bucket(&xl_bucket)
+                                        //         .key($file_name)
+                                        //         .content_type(
+                                        //             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        //         )
+                                        //         .body(std::fs::read(format!("/tmp/{}", $file_name))?.into())
+                                        //         .send()
+                                        //         .await?;
+                                        //     tracing::info!("Between({}, {}): Saved to S3", from, until);
+                                        // }
 
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {

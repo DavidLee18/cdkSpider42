@@ -170,7 +170,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		EnforceSSL:        jsii.Bool(true),
 		PublicReadAccess:  jsii.Bool(false),
 		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
-		Versioned:         jsii.Bool(true),
+		Versioned:         jsii.Bool(false),
 	})
 
 	snsLogRole := awsiam.NewRole(stack, aws.String("spider42SnsLogRole"), &awsiam.RoleProps{
@@ -199,6 +199,12 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Protocol: awssns.SubscriptionProtocol_EMAIL,
 	})
 
+	awssns.NewSubscription(stack, jsii.String("Spider42JobDoneSubscription2"), &awssns.SubscriptionProps{
+		Topic:    spider42JobDone,
+		Endpoint: jsii.String(os.Getenv("SPIDER42_JOB_DONE_EMAIL2")),
+		Protocol: awssns.SubscriptionProtocol_EMAIL,
+	})
+
 	// Creates Origin Access Identity (OAI) to only allow CloudFront to get content
 	cloudfrontDefaultBehavior := &awscloudfront.BehaviorOptions{
 		// Sets the S3 Bucket as the origin and tells CloudFront to use the created OAI to access it
@@ -221,7 +227,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_FETCH_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
-			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_STORE_MESSAGE") + *dist.DomainName() + "/stores.xlsx"),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_STORE_MESSAGE") + *dist.DomainName() + "/"),
 			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_STORE_SUBJECT")),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
 			"QUEUE_ARN":        storeQueue.QueueArn(),
@@ -257,8 +263,10 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Environment: &map[string]*string{
 			"API_ACTION":       jsii.String(os.Getenv("SPIDER42_UPDATE_ACTION")),
 			"BUCKET_NAME":      spider42Bucket.BucketName(),
-			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_UPDATE_MESSAGE") + *dist.DomainName() + "/updates.xlsx"),
+			"EMAIL_MESSAGE":    jsii.String(os.Getenv("EMAIL_UPDATE_MESSAGE") + *dist.DomainName() + "/"),
 			"EMAIL_SUBJECT":    jsii.String(os.Getenv("EMAIL_UPDATE_SUBJECT")),
+			"FAIL_MESSAGE":     jsii.String(os.Getenv("FAIL_UPDATE_MESSAGE")),
+			"FAIL_SUBJECT":     jsii.String(os.Getenv("FAIL_UPDATE_SUBJECT")),
 			"LIMIT_TABLE_NAME": limitTable.TableName(),
 			"QUEUE_ARN":        updateQueue.QueueArn(),
 			"QUEUE_URL":        updateQueue.QueueUrl(),
