@@ -1,3 +1,5 @@
+use std::env;
+
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -442,7 +444,7 @@ pub async fn delete_from_queue(
 }
 
 pub async fn retry_tomorrow(
-    ev: &aws_sdk_eventbridge::Client,
+    sched: &aws_sdk_scheduler::Client,
     payload: Payload,
 ) -> Result<(), lambda_runtime::Error> {
     let now = chrono::Utc::now();
@@ -458,23 +460,24 @@ pub async fn retry_tomorrow(
     } else {
         today_time
     };
-    let rule_name = format!("spider42_fetch_{}", dest_time.timestamp_micros());
-    ev.put_rule()
-        .name(&rule_name)
-        .schedule_expression(format!("cron({})", dest_time.format("%M %H %d %m ? %Y")))
-        .state(aws_sdk_eventbridge::types::RuleState::Enabled)
-        .send()
-        .await?;
-    ev.put_targets()
-        .rule(&rule_name)
-        .targets(
-            aws_sdk_eventbridge::types::Target::builder()
-                .id(format!("{}_target", rule_name))
-                .arn(
-                    std::env::var("QUEUE_ARN")
-                        .map_err(|_| MyError::NoEnvVar("QUEUE_ARN".to_string()))?,
-                )
+    let schedule_name = env::var("SCHED_NAME")?;
+    let schedule_group = env::var("SCHED_GROUP")?;
+    sched
+        .update_schedule()
+        .name(&schedule_name)
+        .group_name(&schedule_group)
+        .schedule_expression(format!("cron({})", dest_time.format("%M %H * * ? *")))
+        .state(aws_sdk_scheduler::types::ScheduleState::Enabled)
+        .target(
+            aws_sdk_scheduler::types::Target::builder()
+                .arn(env::var("QUEUE_ARN")?)
+                .role_arn(env::var("SCHED_ROLE")?)
                 .input(serde_json::to_string(&payload)?)
+                .build()?,
+        )
+        .flexible_time_window(
+            aws_sdk_scheduler::types::FlexibleTimeWindow::builder()
+                .mode(aws_sdk_scheduler::types::FlexibleTimeWindowMode::Off)
                 .build()?,
         )
         .send()
@@ -484,7 +487,7 @@ pub async fn retry_tomorrow(
 
 #[macro_export]
 macro_rules! match_result_code {
-    ($info:ident, $from: ident, $until: ident, $ev:ident, $sqs:ident, $queue:ident, $handle:expr) => {
+    ($info:ident, $from: ident, $until: ident, $sched:ident, $sqs:ident, $queue:ident, $handle:expr) => {
         match $info.result.code {
             StoreInfoResultCode::Info000 => {
                 if $info.row.len() != $info.total_count.parse::<usize>()? {
@@ -497,7 +500,7 @@ macro_rules! match_result_code {
             }
             StoreInfoResultCode::Info300 => {
                 tracing::warn!("API calls' limit reached; will retry tomorrow");
-                retry_tomorrow($ev, Payload::Start($from, $until)).await?;
+                retry_tomorrow($sched, Payload::Start(0, 999)).await?;
                 send_queue(&$sqs, &$queue, Payload::End).await?;
                 delete_from_queue(&$sqs, &$queue, &$handle).await?;
                 return Ok(());
@@ -509,7 +512,7 @@ macro_rules! match_result_code {
                         .await?;
                 } else {
                     tracing::warn!("cannot fetch more; terminating...");
-                    retry_tomorrow($ev, Payload::Start($from, $from + 1000)).await?;
+                    retry_tomorrow($sched, Payload::Start(0, 999)).await?;
                     send_queue(&$sqs, &$queue, Payload::End).await?;
                 }
                 delete_from_queue(&$sqs, &$queue, &$handle).await?;
@@ -561,7 +564,7 @@ macro_rules! atomic_puts {
                     .table_name(&table_name)
                     .set_item(Some(i))
                     .condition_expression(
-                        format!("attribute_not_exists(ID) AND (attribute_not_exists({}) OR attribute_not_exists({}))", $name, $no),
+                        format!("attribute_not_exists(ID) AND NOT (attribute_exists({}) AND attribute_exists({}))", $name, $no),
                     )
                     .build()
             }).collect::<Result<Vec<_>, _>>()).collect::<Result<Vec<_>, _>>()? {
@@ -586,7 +589,7 @@ macro_rules! handle {
             sqs: &aws_sdk_sqs::Client,
             db: &aws_sdk_dynamodb::Client,
             secretsm: &aws_sdk_secretsmanager::Client,
-            ev: &aws_sdk_eventbridge::Client,
+            sched: &aws_sdk_scheduler::Client,
             s3: &aws_sdk_s3::Client,
             sns: &aws_sdk_sns::Client,
         ) -> Result<(), Error> {
@@ -625,7 +628,7 @@ macro_rules! handle {
                                         let raw = serde_json::to_string(&res[&api_action].take())?;
                                         let de = &mut serde_json::Deserializer::from_str(&raw);
                                         let sinfo: $ts = serde_path_to_error::deserialize(de)?;
-                                        ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
+                                        ::spider42::match_result_code!(sinfo, from, until, sched, sqs, queue, record.receipt_handle);
 
                                         let _ = db
                                             .transact_write_items()
@@ -669,6 +672,8 @@ macro_rules! handle {
                                         // umya_spreadsheet::writer::xlsx::write(&xl,
                                         // std::path::Path::new(&format!("/tmp/{}", $file_name)))?;
 
+                                        let today = format!("{}", chrono::Utc::now().format("%Y%m%d"));
+                                        tracing::info!("initial infos: {}", sinfo.row.len());
                                         let mut items = sinfo
                                             .row
                                             .into_iter()
@@ -679,12 +684,13 @@ macro_rules! handle {
                                                         i
                                                     );
                                                     false
-                                                } else {
-                                                    true
-                                                }
+                                                } else if i.$date < today {
+                                                    false
+                                                } else { true }
                                             })
                                             .map(|i| serde_dynamo::to_item(i))
                                             .collect::<Result<Vec<_>, _>>()?;
+                                        tracing::info!("putting actually {} items...", items.len());
 
                                         ::spider42::inject_id!(items);
                                         ::spider42::atomic_puts!(items, db, $pk, "LCNS_NO");
@@ -717,10 +723,11 @@ macro_rules! handle {
                                             "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
                                             txt
                                         );
+                                        delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                         if txt.contains("접속 중") { // delay and retry
                                             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                            send_queue(&sqs, &queue, Payload::Start(from, until)).await?;
                                         }
-                                        // send_queue(&sqs, &queue, Payload::Start(from, until)).await?;
                                     }
                                 }
                                 Err(minreq::Error::IoError(e))
@@ -754,7 +761,7 @@ macro_rules! handle {
                                         let de = &mut serde_json::Deserializer::from_str(&raw);
                                         let sinfo: $ts = serde_path_to_error::deserialize(de)?;
                                         let mut write = false;
-                                        ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
+                                        ::spider42::match_result_code!(sinfo, from, until, sched, sqs, queue, record.receipt_handle);
 
                                         // if sinfo.row.len() > 0 {
                                         //     write = true;
@@ -781,6 +788,8 @@ macro_rules! handle {
                                         //     )?;
                                         // }
 
+                                        let today = format!("{}", chrono::Utc::now().format("%Y%m%d"));
+                                        tracing::info!("initial infos: {}", sinfo.row.len());
                                         let mut items = sinfo
                                             .row
                                             .into_iter()
@@ -791,12 +800,14 @@ macro_rules! handle {
                                                         i
                                                     );
                                                     false
-                                                } else {
-                                                    true
-                                                }
+                                                } else if i.$date < today {
+                                                    false
+                                                } else { true }
                                             })
                                             .map(|i| serde_dynamo::to_item(i))
                                             .collect::<Result<Vec<_>, _>>()?;
+                                        tracing::info!("putting actually {} items...", items.len());
+
                                         ::spider42::inject_id!(items);
                                         ::spider42::atomic_puts!(items, db, $pk, "LCNS_NO");
 
@@ -829,10 +840,11 @@ macro_rules! handle {
                                             "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
                                             txt
                                         );
+                                        delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                         if txt.contains("접속 중") { // delay and retry
                                             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                            send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
                                         }
-                                        // send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
                                     }
                                 }
                                 Err(minreq::Error::IoError(e))
@@ -870,13 +882,14 @@ macro_rules! handle {
                             }
                             let mut xl = umya_spreadsheet::new_file();
                             let sheet = xl.get_active_sheet_mut();
-                            sheet.set_name($file_name.split('.').rev().skip(1).collect::<String>());
+                            let file_no_ext = $file_name.split('.').rev().skip(1).collect::<String>();
+                            sheet.set_name(&file_no_ext);
                             let mut sinfo = <$ts as Default>::default();
                             if infos.len() > 0 {
                                 sinfo.row = infos;
                                 sinfo.put_to_sheet(sheet)?;
                             }
-                            let file_name = format!("{}_{}.xlsx", $file_name, today);
+                            let file_name = format!("{}_{}.xlsx", file_no_ext, today);
                             umya_spreadsheet::writer::xlsx::write(&xl,
                                 std::path::Path::new(&format!("/tmp/{}", file_name)))?;
                             let _ = s3
@@ -976,7 +989,7 @@ macro_rules! handle {
                                         let de = &mut serde_json::Deserializer::from_str(&raw);
                                         let sinfo: $ts = serde_path_to_error::deserialize(de)?;
                                         let mut write = false;
-                                        ::spider42::match_result_code!(sinfo, from, until, ev, sqs, queue, record.receipt_handle);
+                                        ::spider42::match_result_code!(sinfo, from, until, sched, sqs, queue, record.receipt_handle);
 
                                         // if sinfo.row.len() > 0 {
                                         //     write = true;
@@ -1051,10 +1064,11 @@ macro_rules! handle {
                                             "Error from API response (\"alert()\" or \"<script>\" detected): {:?}",
                                             txt
                                         );
+                                        delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                         if txt.contains("접속 중") { // delay and retry
                                             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                                            send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
                                         }
-                                        // send_queue(&sqs, &queue, Payload::Between(from, until)).await?;
                                     }
                                 }
                                 Err(minreq::Error::IoError(e))

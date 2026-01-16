@@ -100,7 +100,7 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
 	updateSchedule := awsscheduler.NewSchedule(stack, jsii.String("Spider42UpdateSchedule"), &awsscheduler.ScheduleProps{
-		Enabled:       jsii.Bool(false),
+		// Enabled:       jsii.Bool(false),
 		ScheduleGroup: scheduleGroup,
 		Schedule: awsscheduler.ScheduleExpression_Cron(&awsscheduler.CronOptionsWithTimezone{
 			Minute: jsii.String(fmt.Sprintf("%02d", when.Minute())),
@@ -113,6 +113,26 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			DeadLetterQueue: updateDeadQueue,
 			Input:           awsscheduler.ScheduleTargetInput_FromText(jsii.String("{\"Start\": [0, 999]}")),
 		})})
+
+	scheduleExecRole := awsiam.NewRole(stack, jsii.String("Spider42SchedExecRole"), &awsiam.RoleProps{
+		AssumedBy: awsiam.NewServicePrincipal(jsii.String("scheduler.amazonaws.com"), nil),
+		InlinePolicies: &map[string]awsiam.PolicyDocument{
+			"policy1": awsiam.NewPolicyDocument(&awsiam.PolicyDocumentProps{
+				Statements: &[]awsiam.PolicyStatement{
+					awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+						Actions: &[]*string{
+							jsii.String("sqs:SendMessage"),
+						},
+						Effect: awsiam.Effect_ALLOW,
+						Resources: &[]*string{
+							storeQueue.QueueArn(),
+							updateQueue.QueueArn(),
+						},
+					}),
+				},
+			}),
+		},
+	})
 
 	// create DynamoDB table
 	storesTable := awsdynamodb.NewTable(stack, jsii.String("Spider42Stores"), &awsdynamodb.TableProps{
@@ -272,6 +292,9 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 			"QUEUE_URL":        updateQueue.QueueUrl(),
 			"TABLE_NAME":       storesUpdatesTable.TableName(),
 			"SNS_ARN":          spider42JobDone.TopicArn(),
+			"SCHED_NAME":       updateSchedule.ScheduleName(),
+			"SCHED_GROUP":      scheduleGroup.ScheduleGroupName(),
+			"SCHED_ROLE":       scheduleExecRole.RoleArn(),
 		},
 		Events: &[]awslambda.IEventSource{
 			awslambdaeventsources.NewSqsEventSource(updateQueue, &awslambdaeventsources.SqsEventSourceProps{
@@ -440,12 +463,12 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 	}))
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Actions: &[]*string{
-			jsii.String("events:PutRule"),
-			jsii.String("events:PutTargets"),
+			jsii.String("scheduler:GetSchedule"),
+			jsii.String("scheduler:UpdateSchedule"),
 		},
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
-			jsii.String("arn:aws:events:*:*:rule/*"),
+			jsii.String("arn:aws:scheduler:*:*:schedule/*/*"),
 		},
 	}))
 	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
@@ -464,6 +487,15 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 		Effect: awsiam.Effect_ALLOW,
 		Resources: &[]*string{
 			jsii.String("arn:aws:sns:*:*:*"),
+		},
+	}))
+	lambdaFetchUpdates.AddToRolePolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Actions: &[]*string{
+			jsii.String("iam:PassRole"),
+		},
+		Effect: awsiam.Effect_ALLOW,
+		Resources: &[]*string{
+			scheduleExecRole.RoleArn(),
 		},
 	}))
 

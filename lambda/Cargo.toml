@@ -1,13 +1,13 @@
 [package]
 name = "spider42"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 
 [dependencies]
 aws-config = { version = "1.8.11", features = ["behavior-version-latest", "rustls"] }
 aws-sdk-dynamodb = "1.100.0"
-aws-sdk-eventbridge = "1.98.0"
 aws-sdk-s3 = "1.118.0"
+aws-sdk-scheduler = "1.91.0"
 aws-sdk-secretsmanager = "1.95.0"
 aws-sdk-sns = "1.92.0"
 aws-sdk-sqs = "1.90.0"

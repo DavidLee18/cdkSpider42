@@ -19,12 +19,12 @@ async fn main() -> Result<(), Error> {
     let sqs = aws_sdk_sqs::Client::new(&config);
     let db = aws_sdk_dynamodb::Client::new(&config);
     let secretsm = aws_sdk_secretsmanager::Client::new(&config);
-    let ev = aws_sdk_eventbridge::Client::new(&config);
+    let sched = aws_sdk_scheduler::Client::new(&config);
     let s3 = aws_sdk_s3::Client::new(&config);
     let sns = aws_sdk_sns::Client::new(&config);
 
     run(service_fn(async |e| {
-        spider42_fetch_stores(e, &sqs, &db, &secretsm, &ev, &s3, &sns).await
+        spider42_fetch_stores(e, &sqs, &db, &secretsm, &sched, &s3, &sns).await
     }))
     .await
 }

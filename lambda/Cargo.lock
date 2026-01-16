@@ -211,28 +211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-sdk-eventbridge"
-version = "1.98.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb066fd5643feb8096fa641b02dacd301891002e57f06335d705cb4ab79653d9"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http 0.2.12",
- "regex-lite",
- "tracing",
-]
-
-[[package]]
 name = "aws-sdk-s3"
 version = "1.118.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -264,6 +242,28 @@ dependencies = [
  "sha2",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "aws-sdk-scheduler"
+version = "1.91.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f63be48ec6a47e8850b6ab01dfffdd83b3ee76df8d83a0d71cd55bb01ce84f42"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -2662,12 +2662,12 @@ dependencies = [
 
 [[package]]
 name = "spider42"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aws-config",
  "aws-sdk-dynamodb",
- "aws-sdk-eventbridge",
  "aws-sdk-s3",
+ "aws-sdk-scheduler",
  "aws-sdk-secretsmanager",
  "aws-sdk-sns",
  "aws-sdk-sqs",
