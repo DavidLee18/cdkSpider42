@@ -7,7 +7,7 @@ use itertools::Itertools;
 use lambda_runtime::{Error, run, service_fn, tracing};
 use spider42::{
     Limit, MyError, Payload, Store, StoreInfoResultCode, StoreInfos, delete_from_queue, get_secret,
-    retry_tomorrow, send_queue,
+    retry_later, retry_tomorrow, send_queue,
 };
 use std::{collections::HashMap, env};
 use uuid::Uuid;

@@ -17,6 +17,7 @@ pub enum MyError {
     NoLimit,
     NoEnvVar(String),
     TimeoutsInRow(u32),
+    InvalidRetry,
 }
 
 impl std::fmt::Display for MyError {
@@ -37,6 +38,7 @@ impl std::fmt::Display for MyError {
             MyError::NoLimit => write!(f, "No limit found"),
             MyError::NoEnvVar(var) => write!(f, "No environment variable found: {}", var),
             MyError::TimeoutsInRow(n) => write!(f, "{} Timeouts in row", n),
+            MyError::InvalidRetry => write!(f, "Invalid retry"),
         }
     }
 }
@@ -449,7 +451,7 @@ pub async fn retry_tomorrow(
 ) -> Result<(), lambda_runtime::Error> {
     let now = chrono::Utc::now();
     let mut today_time = now.clone();
-    let today_time_res = today_time.with_time(chrono::NaiveTime::from_hms_opt(10, 30, 0).unwrap());
+    let today_time_res = today_time.with_time(chrono::NaiveTime::from_hms_opt(1, 0, 0).unwrap());
     if let chrono::LocalResult::Single(t) = today_time_res {
         today_time = t;
     } else {
@@ -483,6 +485,74 @@ pub async fn retry_tomorrow(
         .send()
         .await?;
     Ok(())
+}
+
+pub async fn retry_later(
+    sched: &aws_sdk_scheduler::Client,
+    payload: Payload,
+) -> Result<(), lambda_runtime::Error> {
+    match payload {
+        Payload::Between(_, _) => {
+            let now = chrono::Utc::now();
+            let mut today_time = now.clone();
+            let today_time_res =
+                today_time.with_time(chrono::NaiveTime::from_hms_opt(1, 0, 0).unwrap());
+            if let chrono::LocalResult::Single(t) = today_time_res {
+                today_time = t;
+            } else {
+                panic!("Failed to set time");
+            }
+            let mut today_time1 = now.clone();
+            let today_time_res1 =
+                today_time1.with_time(chrono::NaiveTime::from_hms_opt(1, 0, 0).unwrap());
+            if let chrono::LocalResult::Single(t) = today_time_res1 {
+                today_time1 = t;
+            } else {
+                panic!("Failed to set time");
+            }
+            let mut today_time2 = now.clone();
+            let today_time_res2 =
+                today_time2.with_time(chrono::NaiveTime::from_hms_opt(1, 0, 0).unwrap());
+            if let chrono::LocalResult::Single(t) = today_time_res2 {
+                today_time2 = t;
+            } else {
+                panic!("Failed to set time");
+            }
+            let dest_time = if today_time <= now && now < today_time1 {
+                today_time1
+            } else if today_time1 <= now && now < today_time2 {
+                today_time2
+            } else {
+                today_time + chrono::Duration::days(1)
+            };
+            let schedule_name = env::var("SCHED_NAME")?;
+            let schedule_group = env::var("SCHED_GROUP")?;
+            sched
+                .update_schedule()
+                .name(&schedule_name)
+                .group_name(&schedule_group)
+                .schedule_expression(format!("cron({})", dest_time.format("%M %H * * ? *")))
+                .state(aws_sdk_scheduler::types::ScheduleState::Enabled)
+                .target(
+                    aws_sdk_scheduler::types::Target::builder()
+                        .arn(env::var("QUEUE_ARN")?)
+                        .role_arn(env::var("SCHED_ROLE")?)
+                        .input(serde_json::to_string(&payload)?)
+                        .build()?,
+                )
+                .flexible_time_window(
+                    aws_sdk_scheduler::types::FlexibleTimeWindow::builder()
+                        .mode(aws_sdk_scheduler::types::FlexibleTimeWindowMode::Off)
+                        .build()?,
+                )
+                .send()
+                .await?;
+            Ok(())
+        }
+        Payload::Start(_, _) | Payload::End | Payload::TimeoutRetry(_, _) => {
+            Err(Box::new(MyError::InvalidRetry))
+        }
+    }
 }
 
 #[macro_export]
@@ -765,13 +835,16 @@ macro_rules! handle {
                                         ::spider42::atomic_puts!(items, db, $pk, "LCNS_NO");
 
                                         let width = until - from;
-
-                                        send_queue(
-                                            &sqs,
-                                            &queue,
-                                            Payload::Between(from + width, until + width),
-                                        )
-                                        .await?;
+                                        if until % 333000 < 999 {
+                                            retry_later(&sched, Payload::Start(from + width, until + width),).await?
+                                        } else {
+                                            send_queue(
+                                                &sqs,
+                                                &queue,
+                                                Payload::Between(from + width, until + width),
+                                            )
+                                            .await?;
+                                        }
 
                                         delete_from_queue(&sqs, &queue, &record.receipt_handle).await?;
                                     } else {

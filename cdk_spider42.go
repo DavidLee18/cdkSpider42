@@ -76,10 +76,10 @@ func NewCdkSpider42Stack(scope constructs.Construct, id string, props *CdkSpider
 
 	// create EventBridge scheduler
 	when := time.Now().UTC()
-	if when.Hour() > 10 || (when.Hour() == 10 && when.Minute() >= 30) {
-		when = time.Date(when.Year(), when.Month(), when.Day()+1, 10, 30, 0, 0, time.UTC)
+	if when.Hour() > 1 || (when.Hour() == 1 && when.Minute() >= 0) {
+		when = time.Date(when.Year(), when.Month(), when.Day()+1, 1, 0, 0, 0, time.UTC)
 	} else {
-		when = time.Date(when.Year(), when.Month(), when.Day(), 10, 30, 0, 0, time.UTC)
+		when = time.Date(when.Year(), when.Month(), when.Day(), 1, 0, 0, 0, time.UTC)
 	}
 	scheduleGroup := awsscheduler.NewScheduleGroup(stack, jsii.String("Spider42ScheduleGroup"), &awsscheduler.ScheduleGroupProps{
 		RemovalPolicy:     awscdk.RemovalPolicy_DESTROY,
